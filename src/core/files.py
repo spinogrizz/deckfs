@@ -77,6 +77,10 @@ class FileWatcher(FileSystemEventHandler):
         Args:
             event: Directory event
         """
+        # Skip 'modified' events for directories - these are usually caused by file changes inside
+        if event.event_type == 'modified':
+            return
+            
         # Check if this is a button directory event at root level
         src_path = event.src_path
         dest_path = getattr(event, 'dest_path', None)

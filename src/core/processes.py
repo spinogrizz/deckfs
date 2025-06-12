@@ -35,6 +35,10 @@ class ProcessManager:
         Returns:
             bool: True if script started successfully
         """
+        # Check if already running for background scripts
+        if script_type == "background" and self.is_running(script_type):
+            return True
+            
         # Stop existing process
         self.stop_script(script_type)
         
@@ -95,11 +99,13 @@ class ProcessManager:
             if script_type in self.processes:
                 process = self.processes[script_type]
                 try:
-                    process.terminate()
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                    if process.poll() is None:  # Still running
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait()
                 except Exception as e:
                     print(f"Error stopping {script_type} script: {e}")
                 finally:

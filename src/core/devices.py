@@ -33,8 +33,8 @@ class StreamDeckManager:
         self.file_watcher = FileWatcher(self.event_bus, config_dir)
         self.buttons: Dict[int, Button] = {}
         
-        # Subscribe to button press events from device
-        self.event_bus.subscribe("DEVICE_BUTTON_PRESSED", self._handle_device_button_press)
+        # Subscribe to file change events
+        self.event_bus.subscribe("FILE_CHANGED", self._handle_file_change)
         
         # Subscribe to button directory changes
         self.event_bus.subscribe("BUTTON_DIRECTORIES_CHANGED", self._handle_button_directories_changed)
@@ -92,11 +92,24 @@ class StreamDeckManager:
         Args:
             button_id: Button ID to reload (1-based)
         """
+        # Stop old button
         if button_id in self.buttons:
-            self.buttons[button_id].reload()
+            self.buttons[button_id].cleanup()
+            del self.buttons[button_id]
+        
+        # Create new button
+        working_dir = self._find_button_working_dir(button_id)
+        if working_dir:
+            button = Button(working_dir)
+            self.buttons[button_id] = button
+            if button.load_config():
+                button.start()
+                self.update_button_image(button_id)
             print(f"Button {button_id:02d} reloaded")
         else:
-            print(f"Button {button_id:02d} not found")
+            # Clear button if no directory
+            self.clear_buttons(button_id)
+            print(f"Button {button_id:02d} removed")
             
     def reload_all(self):
         """Reload all buttons."""
@@ -119,6 +132,45 @@ class StreamDeckManager:
         self.start()
         
         print("All buttons reloaded")
+    
+    def update_button_image(self, button_id: int):
+        """Update button image on device.
+        
+        Args:
+            button_id: Button ID (1-based)
+        """
+        if not self.deck:
+            print(f"Button {button_id:02d}: No deck available")
+            return
+            
+        if button_id not in self.buttons:
+            print(f"Button {button_id:02d}: Button not found")
+            return
+            
+        button = self.buttons[button_id]
+        image_path = button.get_image_path()
+        
+        if not image_path:
+            print(f"Button {button_id:02d}: No image file found")
+            return
+            
+        try:
+            # Load and scale image
+            print(f"Button {button_id:02d}: Loading image from {image_path}")
+            image = Image.open(image_path)
+            image_bytes = PILHelper.to_native_format(
+                self.deck,
+                PILHelper.create_scaled_image(self.deck, image)
+            )
+            
+            # Set image on device
+            key_index = button_id - 1  # Convert to 0-based index
+            self.deck.set_key_image(key_index, image_bytes)
+            
+            print(f"Button {button_id:02d}: Image updated from {image_path}")
+            
+        except Exception as e:
+            print(f"Button {button_id:02d}: Error updating image: {e}")
         
     @classmethod
     def _load_blank_image(cls) -> Optional[Image.Image]:
@@ -199,9 +251,6 @@ class StreamDeckManager:
             
     def _create_buttons(self):
         """Create button instances."""
-        # Find all button directories
-        button_dirs = self._find_button_directories()
-        
         # Clear existing buttons
         for button in self.buttons.values():
             button.cleanup()
@@ -209,13 +258,19 @@ class StreamDeckManager:
         
         # Create new buttons
         for button_id in range(1, self.key_count + 1):
-            button = Button(button_id, self.config_dir, self.event_bus, self.deck, self)
-            self.buttons[button_id] = button
+            working_dir = self._find_button_working_dir(button_id)
+            if working_dir:
+                button = Button(working_dir)
+                self.buttons[button_id] = button
             
     def _load_all_buttons(self):
         """Load configuration for all buttons."""
-        for button in self.buttons.values():
-            button.load_config()
+        for button_id, button in self.buttons.items():
+            if button.load_config():
+                self.update_button_image(button_id)
+            else:
+                # Clear button if no config
+                self.clear_buttons(button_id)
             
     def _smart_reload_affected_buttons(self, event_type: str, src_path: str, dest_path: str):
         """Smart reload only affected buttons.
@@ -238,8 +293,8 @@ class StreamDeckManager:
             if dest_button_id:
                 affected_buttons.add(dest_button_id)
                 
-        elif event_type in ["created", "deleted"]:
-            # For create/delete, only one button is affected
+        elif event_type in ["created", "deleted", "modified"]:
+            # For create/delete/modified, only one button is affected
             button_id = self._extract_button_id_from_path(src_path)
             if button_id:
                 affected_buttons.add(button_id)
@@ -248,22 +303,28 @@ class StreamDeckManager:
         
         # Reload only affected buttons
         for button_id in affected_buttons:
-            if button_id in self.buttons:
-                print(f"Reloading button {button_id:02d}")
-                self.buttons[button_id].reload()
+            print(f"Reloading button {button_id:02d}")
+            self.reload_button(button_id)
                 
-    def _extract_button_id_from_path(self, dir_path: str) -> int:
-        """Extract button ID from directory path.
+    def _extract_button_id_from_path(self, file_path: str) -> int:
+        """Extract button ID from file or directory path.
         
         Args:
-            dir_path: Directory path
+            file_path: File or directory path
             
         Returns:
             int: Button ID (1-based) or 0 if not found
         """
         try:
-            # Get directory name
-            dir_name = os.path.basename(dir_path)
+            # If it's a file path, get the parent directory
+            if os.path.isfile(file_path) or '.' in os.path.basename(file_path):
+                dir_path = os.path.dirname(file_path)
+            else:
+                dir_path = file_path
+                
+            # Get directory name relative to config_dir
+            rel_path = os.path.relpath(dir_path, self.config_dir)
+            dir_name = rel_path.split(os.sep)[0]  # Get first part of relative path
             
             # Extract first two digits
             if len(dir_name) >= 2 and dir_name[:2].isdigit():
@@ -272,7 +333,7 @@ class StreamDeckManager:
                 if 1 <= button_id <= self.key_count:
                     return button_id
         except Exception as e:
-            print(f"Error extracting button ID from {dir_path}: {e}")
+            print(f"Error extracting button ID from {file_path}: {e}")
             
         return 0
         
@@ -295,6 +356,26 @@ class StreamDeckManager:
                     button_dirs[button_id] = item
                     
         return button_dirs
+    
+    def _find_button_working_dir(self, button_id: int) -> Optional[str]:
+        """Find working directory for button.
+        
+        Args:
+            button_id: Button ID (1-based)
+            
+        Returns:
+            Optional[str]: Full path to button working directory or None
+        """
+        if not os.path.isdir(self.config_dir):
+            return None
+            
+        button_prefix = f"{button_id:02d}"
+        
+        for item in os.listdir(self.config_dir):
+            if item.startswith(button_prefix) and os.path.isdir(os.path.join(self.config_dir, item)):
+                return os.path.join(self.config_dir, item)
+                
+        return None
         
     def _device_key_callback(self, deck, key, state):
         """Handle physical button press from device.
@@ -309,20 +390,46 @@ class StreamDeckManager:
             
         button_id = key + 1  # Convert to 1-based
         
-        # Emit button press event
-        self.event_bus.emit(
-            "BUTTON_PRESSED",
-            {"button_id": button_id}
-        )
-        
-    def _handle_device_button_press(self, event):
-        """Handle device button press event.
+        # Handle button press directly
+        if button_id in self.buttons:
+            print(f"Button {button_id:02d}: Pressed")
+            self.buttons[button_id].handle_press()
+    
+    def _handle_file_change(self, event):
+        """Handle file change event.
         
         Args:
-            event: Button press event
+            event: File change event
         """
-        # This is handled by individual buttons subscribing to BUTTON_PRESSED
-        pass
+        file_path = event.data.get("path", "")
+        print(f"[FILE_CHANGED] {file_path}")
+        
+        # Find which button this file belongs to
+        button_id = self._extract_button_id_from_path(file_path)
+        if not button_id:
+            print(f"Could not extract button_id from path: {file_path}")
+            return
+        if button_id not in self.buttons:
+            print(f"Button {button_id:02d} not found in buttons")
+            return
+            
+        filename = os.path.basename(file_path)
+        
+        # Handle image changes
+        if filename.startswith("image."):
+            print(f"Button {button_id:02d}: Image file changed ({filename})")
+            self.update_button_image(button_id)
+            
+        # Handle script changes
+        elif filename.startswith("background."):
+            print(f"Button {button_id:02d}: Background script changed")
+            self.buttons[button_id].handle_script_change("background")
+                
+        elif filename.startswith("update."):
+            print(f"Button {button_id:02d}: Update script changed") 
+            self.buttons[button_id].handle_script_change("update")
+            self.update_button_image(button_id)  # Update image after update script
+        
         
     def _handle_button_directories_changed(self, event):
         """Handle button directory changes (rename/create/delete).
