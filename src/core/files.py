@@ -4,20 +4,20 @@ import os
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..utils.event_bus import EventBus
+from ..utils.debouncer import Debouncer
 
 
 class FileWatcher(FileSystemEventHandler):
     """File system watcher with debouncing."""
     
-    def __init__(self, event_bus: EventBus, config_dir: str):
+    def __init__(self, debouncer: Debouncer, config_dir: str):
         """Initialize file watcher.
         
         Args:
-            event_bus: Event bus for emitting events
+            debouncer: Debouncer for emitting events
             config_dir: Directory to watch
         """
-        self.event_bus = event_bus
+        self.debouncer = debouncer
         self.config_dir = config_dir
         self.observer: Observer = None
         self.file_types = ["image", "background", "update", "action"]
@@ -67,7 +67,7 @@ class FileWatcher(FileSystemEventHandler):
         
         if debounce_key:
             # Emit debounced event
-            self.event_bus.emit(
+            self.debouncer.emit(
                 "FILE_CHANGED",
                 {
                     "path": file_path,
@@ -99,8 +99,8 @@ class FileWatcher(FileSystemEventHandler):
             debounce_key = "button_directories"
             
             # Use longer debounce for directory events to prevent reload loops
-            self.event_bus.debounce_interval = 1.0  # Increase temporarily
-            self.event_bus.emit(
+            self.debouncer.debounce_interval = 1.0  # Increase temporarily
+            self.debouncer.emit(
                 "BUTTON_DIRECTORIES_CHANGED",
                 {
                     "event_type": event.event_type,
@@ -110,7 +110,7 @@ class FileWatcher(FileSystemEventHandler):
                 debounce_key=debounce_key
             )
             # Reset back to normal
-            self.event_bus.debounce_interval = 0.5
+            self.debouncer.debounce_interval = 0.5
             
     def _is_button_directory_event(self, dir_path: str) -> bool:
         """Check if directory event is for a button directory.

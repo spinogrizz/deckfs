@@ -6,7 +6,7 @@ from PIL import Image
 from StreamDeck.DeviceManager import DeviceManager as SDKDeviceManager
 from StreamDeck.ImageHelpers import PILHelper
 
-from ..utils.event_bus import EventBus
+from ..utils.debouncer import Debouncer
 from .files import FileWatcher
 from .button import Button
 from ..utils.config import DEFAULT_BRIGHTNESS
@@ -29,15 +29,15 @@ class StreamDeckManager:
         self.key_count = 0
         
         # Core components
-        self.event_bus = EventBus(debounce_interval=0.1)
-        self.file_watcher = FileWatcher(self.event_bus, config_dir)
+        self.debouncer = Debouncer(debounce_interval=0.1)
+        self.file_watcher = FileWatcher(self.debouncer, config_dir)
         self.buttons: Dict[int, Button] = {}
         
         # Subscribe to file change events
-        self.event_bus.subscribe("FILE_CHANGED", self._handle_file_change)
+        self.debouncer.subscribe("FILE_CHANGED", self._handle_file_change)
         
         # Subscribe to button directory changes
-        self.event_bus.subscribe("BUTTON_DIRECTORIES_CHANGED", self._handle_button_directories_changed)
+        self.debouncer.subscribe("BUTTON_DIRECTORIES_CHANGED", self._handle_button_directories_changed)
         
     def initialize(self) -> bool:
         """Initialize Stream Deck device and components.
@@ -77,7 +77,7 @@ class StreamDeckManager:
         self.file_watcher.stop_watching()
         
         # Shutdown event bus
-        self.event_bus.shutdown()
+        self.debouncer.shutdown()
         
         # Close device
         if self.deck:
@@ -410,7 +410,6 @@ class StreamDeckManager:
         filename = os.path.basename(file_path)
         
         if filename.startswith("image."):
-            print(f"Button {button_id:02d}: Image file {event_type} ({filename})")
             self.update_button_image(button_id)
         elif event_type == "modified":
             if filename.startswith("background."):

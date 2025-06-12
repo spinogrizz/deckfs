@@ -15,7 +15,7 @@ class Event:
     timestamp: float
 
 
-class EventBus:
+class Debouncer:
     """Centralized event bus with debouncing support."""
     
     def __init__(self, debounce_interval: float = 0.5):
