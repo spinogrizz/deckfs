@@ -1,0 +1,214 @@
+# stream-deck-fs
+
+A Linux daemon for controlling Stream Deck devices without GUI through filesystem interface.
+
+## Overview
+
+stream-deck-fs provides a simple, filesystem-based interface for configuring and controlling Elgato Stream Deck devices on Linux. Instead of requiring a GUI application, it monitors a directory structure where each numbered folder corresponds to a Stream Deck button.
+
+## Features
+
+- **Filesystem-based configuration** - No GUI required
+- **Hot reload** - Changes take effect immediately without restart
+- **Multi-format support** - PNG, JPEG images and shell/Python/Node.js scripts
+- **Symbolic link support** - Dynamic image switching
+- **Automatic script detection** - Supports .sh, .py, .js action scripts
+- **Live monitoring** - Real-time file system change detection
+
+## Installation
+
+```bash
+pip install stream-deck-fs
+```
+
+## Quick Start
+
+1. Initialize configuration structure:
+```bash
+stream-deck-fs --init
+```
+
+2. Add images and scripts to button folders:
+```bash
+# Button 1
+cp my-icon.png ~/.local/streamdeck/01/image.png
+echo '#!/bin/bash\necho "Button 1 pressed!"' > ~/.local/streamdeck/01/action.sh
+chmod +x ~/.local/streamdeck/01/action.sh
+
+# Button 2  
+cp another-icon.jpg ~/.local/streamdeck/02/image.png
+echo 'print("Button 2 pressed!")' > ~/.local/streamdeck/02/action.py
+```
+
+3. Start the daemon:
+```bash
+stream-deck-fs
+```
+
+## Configuration Structure
+
+```
+~/.local/streamdeck/
+├── 01/
+│   ├── image.png    # Button image (PNG/JPEG)
+│   └── action.sh    # Action script (optional)
+├── 02/
+│   ├── image.jpg
+│   └── action.py
+├── 03/
+│   ├── image.png
+│   └── action.js
+└── ...
+```
+
+### Folder Naming
+- Folders must be named with zero-padded numbers: `01`, `02`, `03`, etc.
+- Each folder corresponds to a Stream Deck button position
+
+### Images
+- Supported formats: PNG, JPEG
+- Filename must start with "image" (e.g., `image.png`, `image.jpg`)
+- Images are automatically scaled to fit button size
+- Symbolic links supported for dynamic switching
+
+### Action Scripts
+- Optional executable scripts triggered on button press
+- Supported types:
+  - `.sh` - Shell scripts (executed with bash)
+  - `.py` - Python scripts (executed with python3)
+  - `.js` - JavaScript scripts (executed with node)
+- Must be named `action.{extension}`
+- Must be executable for shell scripts
+
+## CLI Usage
+
+```bash
+# Start daemon (default config: ~/.local/streamdeck)
+stream-deck-fs
+
+# Use custom config directory
+stream-deck-fs --config-dir /path/to/config
+
+# Initialize basic folder structure
+stream-deck-fs --init
+
+# Show version
+stream-deck-fs --version
+```
+
+## Requirements
+
+- Linux operating system
+- Python 3.8+
+- Connected Elgato Stream Deck device
+- Appropriate udev rules for device access
+
+### Device Permissions
+
+You may need to set up udev rules for device access:
+
+```bash
+# Create udev rule file
+sudo tee /etc/udev/rules.d/50-streamdeck.rules << EOF
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fd9", TAG+="uaccess"
+EOF
+
+# Reload udev rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+## Examples
+
+### Dynamic Image Switching
+```bash
+# Create images
+cp status-online.png ~/.local/streamdeck/01/online.png
+cp status-offline.png ~/.local/streamdeck/01/offline.png
+
+# Switch between them using symlinks
+ln -sf online.png ~/.local/streamdeck/01/image.png   # Shows online
+ln -sf offline.png ~/.local/streamdeck/01/image.png  # Shows offline
+```
+
+### Multi-step Action Script
+```bash
+cat > ~/.local/streamdeck/01/action.sh << 'EOF'
+#!/bin/bash
+# Toggle audio output
+if pactl list short sinks | grep -q analog-stereo; then
+    pactl set-card-profile 0 output:hdmi-stereo
+    ln -sf hdmi-icon.png ~/.local/streamdeck/01/image.png
+else
+    pactl set-card-profile 0 output:analog-stereo  
+    ln -sf speaker-icon.png ~/.local/streamdeck/01/image.png
+fi
+EOF
+chmod +x ~/.local/streamdeck/01/action.sh
+```
+
+### Python Script Example
+```python
+#!/usr/bin/env python3
+# ~/.local/streamdeck/02/action.py
+import subprocess
+import os
+
+# Take screenshot
+subprocess.run(['gnome-screenshot', '-f', f'/tmp/screenshot-{os.getpid()}.png'])
+print("Screenshot taken!")
+```
+
+## Troubleshooting
+
+### Device Not Found
+- Ensure Stream Deck is connected and powered
+- Check udev rules are properly configured
+- Verify user permissions for USB device access
+
+### Images Not Updating
+- Check file permissions and ownership
+- Ensure filename starts with "image"
+- Verify image format is PNG or JPEG
+
+### Scripts Not Executing
+- Verify script has executable permissions (`chmod +x`)
+- Check script interpreter is installed (bash/python3/node)
+- Review daemon output for error messages
+
+## Development
+
+### Project Structure
+```
+src/
+├── cli.py              # Main CLI entry point
+├── core/
+│   └── daemon.py       # Daemon implementation
+├── handlers/
+│   └── file_handler.py # File system event handling
+└── utils/
+    ├── config.py       # Configuration constants
+    └── device.py       # Stream Deck device management
+```
+
+### Dependencies
+- `streamdeck` - Stream Deck SDK
+- `Pillow` - Image processing
+- `watchdog` - File system monitoring
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable  
+5. Submit a pull request
+
+## Support
+
+- Report issues: https://github.com/spinogrizz/stream-deck-fs/issues
+- Source code: https://github.com/spinogrizz/stream-deck-fs
