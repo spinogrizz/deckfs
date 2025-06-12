@@ -164,6 +164,8 @@ class StreamDeckManager:
         """Load blank image once and cache it."""
         if cls._blank_image is None:
             try:
+                # Navigate up from src/core/devices.py to find project root
+                # Using static caching to avoid reloading the same image on every clear operation
                 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 blank_path = os.path.join(project_root, 'resources', 'blank.png')
                 cls._blank_image = Image.open(blank_path)
@@ -267,7 +269,7 @@ class StreamDeckManager:
         
         # Find which buttons are affected
         if event_type == "moved":
-            # For moves, both source and destination buttons are affected
+            # Both source and destination affected because move = delete + create
             src_button_id = self._extract_button_id_from_path(src_path)
             dest_button_id = self._extract_button_id_from_path(dest_path)
             
@@ -299,7 +301,8 @@ class StreamDeckManager:
             int: Button ID (1-based) or 0 if not found
         """
         try:
-            # If it's a file path, get the parent directory
+            # Handle files that may not exist yet during filesystem events
+            # Check for '.' in basename as workaround for non-existent files
             if os.path.isfile(file_path) or '.' in os.path.basename(file_path):
                 dir_path = os.path.dirname(file_path)
             else:
@@ -416,12 +419,12 @@ class StreamDeckManager:
         
         print(f"Button directories changed: {event_type}")
         
-        # Temporarily stop file watcher to prevent reload loops
+        # Critical: prevent infinite reload loops during button directory changes
+        # File watcher must be stopped because reload operations trigger new filesystem events
         self.file_watcher.stop_watching()
         
         try:
             # Smart reload - only affected buttons
             self._smart_reload_affected_buttons(event_type, src_path, dest_path)
         finally:
-            # Restart file watcher after reload
             self.file_watcher.start_watching()

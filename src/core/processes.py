@@ -79,6 +79,8 @@ class ProcessManager:
                 process = self.processes[script_type]
                 try:
                     if process.poll() is None:  # Still running
+                        # Graceful shutdown: try SIGTERM first, then SIGKILL if unresponsive
+                        # 5-second timeout allows scripts to clean up before forced termination
                         process.terminate()
                         try:
                             process.wait(timeout=5)
@@ -104,6 +106,8 @@ class ProcessManager:
         key = f"{script_type}:{script_name}"
         
         with self.lock:
+            # Sliding window crash protection: only count crashes within time window
+            # Prevents infinite restart loops for fundamentally broken scripts
             self.crash_timestamps[key] = [
                 ts for ts in self.crash_timestamps[key]
                 if current_time - ts < self.restart_window
@@ -165,11 +169,14 @@ class ProcessManager:
         
     def _execute_action(self, cmd: List[str], script_path: str) -> bool:
         """Execute action script - run once and exit."""
+        # Fire-and-forget: action scripts handle immediate button responses
         subprocess.Popen(cmd + [script_path], cwd=self.working_dir)
         return True
         
     def _execute_update(self, cmd: List[str], script_path: str) -> bool:
         """Execute update script - run synchronously."""
+        # Synchronous execution: update scripts must complete before button starts
+        # 30-second timeout prevents hanging on unresponsive scripts
         result = subprocess.run(
             cmd + [script_path],
             cwd=self.working_dir,
@@ -181,6 +188,7 @@ class ProcessManager:
         
     def _execute_background(self, cmd: List[str], script_path: str) -> bool:
         """Execute background script - run continuously."""
+        # Store process handle for monitoring and lifecycle management
         with self.lock:
             process = subprocess.Popen(
                 cmd + [script_path],

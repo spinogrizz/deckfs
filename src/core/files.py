@@ -83,7 +83,8 @@ class FileWatcher(FileSystemEventHandler):
         Args:
             event: Directory event
         """
-        # Skip 'modified' events for directories - these are usually caused by file changes inside
+        # Skip 'modified' events for directories - these are cascading events from files inside
+        # Directory 'modified' timestamps don't indicate actual structure changes
         if event.event_type == 'modified':
             return
             
@@ -98,7 +99,9 @@ class FileWatcher(FileSystemEventHandler):
             # Emit button directory change event with longer debouncing for directories
             debounce_key = "button_directories"
             
-            # Use longer debounce for directory events to prevent reload loops
+            # Dangerous: temporarily modify global debounce interval
+            # Directory operations need longer debouncing to prevent cascading reload loops
+            # This approach is risky but necessary given current architecture
             self.debouncer.debounce_interval = 1.0  # Increase temporarily
             self.debouncer.emit(
                 "BUTTON_DIRECTORIES_CHANGED",
@@ -109,7 +112,6 @@ class FileWatcher(FileSystemEventHandler):
                 },
                 debounce_key=debounce_key
             )
-            # Reset back to normal
             self.debouncer.debounce_interval = 0.5
             
     def _is_button_directory_event(self, dir_path: str) -> bool:

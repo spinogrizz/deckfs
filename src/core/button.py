@@ -107,4 +107,6 @@ class Button:
                 if exit_code is not None:
                     self.process_manager.restart_script("background", "background")
                     
+            # Use threading.Event().wait() instead of time.sleep() for better thread responsiveness
+            # Allows clean shutdown when self.running becomes False
             threading.Event().wait(1)  # Check every second
