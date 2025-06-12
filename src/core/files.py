@@ -24,7 +24,6 @@ class FileWatcher(FileSystemEventHandler):
         self.config_file = os.path.join(config_dir, "config.yaml")
         
     def start_watching(self):
-        """Start watching file system."""
         if self.observer:
             return
             
@@ -34,7 +33,6 @@ class FileWatcher(FileSystemEventHandler):
         print(f"File watcher started for: {self.config_dir}")
         
     def stop_watching(self):
-        """Stop watching file system."""
         if self.observer:
             self.observer.stop()
             self.observer.join()

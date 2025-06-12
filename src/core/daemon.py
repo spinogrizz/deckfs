@@ -19,7 +19,6 @@ class StreamDeckDaemon:
         self.running = False
         
     def start(self):
-        """Start daemon."""
         if self.running:
             return
             
@@ -38,7 +37,6 @@ class StreamDeckDaemon:
         print("Press Ctrl+C to exit")
         
     def stop(self):
-        """Stop daemon."""
         if not self.running:
             return
             
@@ -51,7 +49,6 @@ class StreamDeckDaemon:
         print("Daemon stopped")
     
     def run(self):
-        """Run main daemon loop."""
         try:
             self.start()
             while self.running:

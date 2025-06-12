@@ -123,7 +123,6 @@ class Debouncer:
             self._emit_event(event)
             
     def shutdown(self):
-        """Shutdown event bus and cancel all pending timers."""
         with self.lock:
             # Cancel all pending timers
             for timer in self.debounce_timers.values():

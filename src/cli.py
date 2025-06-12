@@ -23,7 +23,6 @@ def create_config_structure():
 
 
 def main():
-    """Main CLI function."""
     parser = argparse.ArgumentParser(
         description="stream-deck-fs - manage Stream Deck through filesystem"
     )

@@ -155,7 +155,6 @@ class ProcessManager:
             return self.processes[script_type].poll()
             
     def cleanup(self):
-        """Stop all running processes."""
         with self.lock:
             for script_type in list(self.processes.keys()):
                 self.stop_script(script_type)

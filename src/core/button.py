@@ -48,7 +48,6 @@ class Button:
         self.start()
         
     def start(self):
-        """Start button (background processes)."""
         if self.running:
             return
             
@@ -63,7 +62,6 @@ class Button:
         self.monitor_thread.start()
         
     def stop(self):
-        """Stop button (background processes)."""
         if not self.running:
             return
             
@@ -75,7 +73,6 @@ class Button:
             self.monitor_thread.join(timeout=2)
         
     def handle_press(self):
-        """Handle button press."""
         self.process_manager.start_script("action", "action")
         
         

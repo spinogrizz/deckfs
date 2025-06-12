@@ -65,13 +65,11 @@ class StreamDeckManager:
         return True
         
     def start(self):
-        """Start all buttons."""
         for button in self.buttons.values():
             button.start()
         print("All buttons started")
         
     def stop(self):
-        """Stop all components."""
         for button in self.buttons.values():
             button.stop()
             
