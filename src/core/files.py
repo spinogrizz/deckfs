@@ -21,6 +21,7 @@ class FileWatcher(FileSystemEventHandler):
         self.config_dir = config_dir
         self.observer: Observer = None
         self.file_types = ["image", "background", "update", "action"]
+        self.config_file = os.path.join(config_dir, "config.yaml")
         
     def start_watching(self):
         """Start watching file system."""
@@ -63,6 +64,19 @@ class FileWatcher(FileSystemEventHandler):
         if event.event_type in ['opened', 'closed_no_write']:
             return
             
+        # Check if this is config.yaml change
+        if file_path == self.config_file:
+            self.debouncer.emit(
+                "CONFIG_CHANGED",
+                {
+                    "path": file_path,
+                    "event_type": event.event_type,
+                    "src_path": event.src_path
+                },
+                debounce_key="config_yaml"
+            )
+            return
+        
         debounce_key = self._get_debounce_key(file_path)
         
         if debounce_key:

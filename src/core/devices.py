@@ -1,7 +1,7 @@
 """Main Stream Deck manager with new architecture."""
 
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from PIL import Image
 from StreamDeck.DeviceManager import DeviceManager as SDKDeviceManager
 from StreamDeck.ImageHelpers import PILHelper
@@ -42,6 +42,9 @@ class StreamDeckManager:
         
         # Subscribe to button directory changes
         self.debouncer.subscribe("BUTTON_DIRECTORIES_CHANGED", self._handle_button_directories_changed)
+        
+        # Subscribe to config changes
+        self.debouncer.subscribe("CONFIG_CHANGED", self._handle_config_change)
         
     def initialize(self) -> bool:
         """Initialize Stream Deck device and components.
@@ -222,8 +225,9 @@ class StreamDeckManager:
             self.deck = devices[0]
             self.deck.open()
             self.deck.reset()
-            brightness = self.config_manager.get_brightness()
-            self.deck.set_brightness(brightness)
+            
+            # Apply initial configuration settings
+            self.config_manager.apply_all_settings(self.deck, self.debouncer)
             
             self.key_count = self.deck.key_count()
             print(f"Found device: {self.deck.deck_type()} with {self.key_count} buttons")
@@ -428,3 +432,12 @@ class StreamDeckManager:
             self._smart_reload_affected_buttons(event_type, src_path, dest_path)
         finally:
             self.file_watcher.start_watching()
+    
+    def _handle_config_change(self, event):
+        """Handle config.yaml file change event.
+        
+        Args:
+            event: Config change event
+        """
+        print("Config file changed, reloading configuration...")
+        self.config_manager.reload_config(self.deck, self.debouncer)

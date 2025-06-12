@@ -93,7 +93,30 @@ class ConfigManager:
         interval = config.get('debounce_interval', DEFAULT_DEBOUNCE_INTERVAL)
         return max(0.01, float(interval))  # Minimum 0.01 seconds
         
-    def reload_config(self):
-        """Reload configuration from file."""
+    def reload_config(self, deck_device=None, debouncer=None):
+        """Reload configuration from file and apply all settings."""
+        print("Configuration file changed, reloading...")
+        
+        # Clear cache to force reload
         self._config_cache = None
-        self.load_config()
+        
+        # Apply all settings 
+        self.apply_all_settings(deck_device, debouncer)
+    
+    
+    def apply_all_settings(self, deck_device=None, debouncer=None):
+        """Apply all current configuration settings to provided components."""
+        if deck_device:
+            try:
+                brightness = self.get_brightness()
+                deck_device.set_brightness(brightness)
+            except Exception as e:
+                print(f"Error applying brightness: {e}")
+        
+        if debouncer:
+            try:
+                new_interval = self.get_debounce_interval()
+                debouncer.debounce_interval = new_interval
+            except Exception as e:
+                print(f"Error applying debounce interval: {e}")
+        
