@@ -1,14 +1,7 @@
 """Main stream-deck-fs daemon class."""
 
-import os
 import time
-import threading
-from StreamDeck.DeviceManager import DeviceManager
-from watchdog.observers import Observer
-
-from ..handlers.file_handler import ImageChangeHandler
-from ..utils.device import DeviceManager as SDDeviceManager
-from ..utils.script_manager import ScriptManager
+from .devices import StreamDeckManager
 from ..utils.config import CONFIG_DIR
 
 
@@ -22,17 +15,9 @@ class StreamDeckDaemon:
             config_dir: Path to configuration directory
         """
         self.config_dir = config_dir or CONFIG_DIR
-        self.device_manager = None
-        self.script_manager = None
-        self.observer = None
+        self.manager = None
         self.running = False
         
-    def initialize_device(self):
-        """Initialize Stream Deck device."""
-        self.device_manager = SDDeviceManager()
-        if not self.device_manager.initialize():
-            raise RuntimeError("Failed to initialize Stream Deck")
-    
     def start(self):
         """Start daemon."""
         if self.running:
@@ -40,24 +25,13 @@ class StreamDeckDaemon:
             
         print("Starting stream-deck-fs daemon...")
         
-        # Initialize device
-        self.initialize_device()
-        
-        # Initialize script manager
-        self.script_manager = ScriptManager(self.config_dir, self.device_manager)
-        self.script_manager.start()
-        
-        # Load initial images
-        self.device_manager.load_initial_images(self.config_dir)
-        
-        # Setup file watcher
-        self.observer = Observer()
-        self.observer.schedule(
-            ImageChangeHandler(self.device_manager, self.script_manager), 
-            path=self.config_dir, 
-            recursive=True
-        )
-        self.observer.start()
+        # Initialize Stream Deck manager
+        self.manager = StreamDeckManager(self.config_dir)
+        if not self.manager.initialize():
+            raise RuntimeError("Failed to initialize Stream Deck")
+            
+        # Start all buttons
+        self.manager.start()
         
         self.running = True
         print(f"Daemon started. Monitoring directory: {self.config_dir}")
@@ -70,15 +44,8 @@ class StreamDeckDaemon:
             
         print("Shutting down daemon...")
         
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
-            
-        if self.script_manager:
-            self.script_manager.stop()
-            
-        if self.device_manager:
-            self.device_manager.cleanup()
+        if self.manager:
+            self.manager.stop()
             
         self.running = False
         print("Daemon stopped")
