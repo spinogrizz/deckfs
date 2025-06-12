@@ -45,11 +45,12 @@ class FileWatcher(FileSystemEventHandler):
         Args:
             event: File system event
         """
-        # Ignore directory events
+        # Handle directory events (button folder changes)
         if event.is_directory:
+            self._handle_directory_event(event)
             return
             
-        # Generate debounce key based on file path and button directory
+        # Handle file events
         file_path = getattr(event, 'dest_path', event.src_path)
         
         # Skip if no valid file path
@@ -69,6 +70,60 @@ class FileWatcher(FileSystemEventHandler):
                 },
                 debounce_key=debounce_key
             )
+            
+    def _handle_directory_event(self, event):
+        """Handle directory events (button folder changes).
+        
+        Args:
+            event: Directory event
+        """
+        # Check if this is a button directory event at root level
+        src_path = event.src_path
+        dest_path = getattr(event, 'dest_path', None)
+        
+        # Check if directory is directly in config_dir (button folder)
+        if self._is_button_directory_event(src_path) or (dest_path and self._is_button_directory_event(dest_path)):
+            print(f"[BUTTON DIR EVENT] {event.event_type}: {src_path}" + (f" -> {dest_path}" if dest_path else ""))
+            
+            # Emit button directory change event with longer debouncing for directories
+            debounce_key = "button_directories"
+            
+            # Use longer debounce for directory events to prevent reload loops
+            self.event_bus.debounce_interval = 1.0  # Increase temporarily
+            self.event_bus.emit(
+                "BUTTON_DIRECTORIES_CHANGED",
+                {
+                    "event_type": event.event_type,
+                    "src_path": src_path,
+                    "dest_path": dest_path
+                },
+                debounce_key=debounce_key
+            )
+            # Reset back to normal
+            self.event_bus.debounce_interval = 0.5
+            
+    def _is_button_directory_event(self, dir_path: str) -> bool:
+        """Check if directory event is for a button directory.
+        
+        Args:
+            dir_path: Directory path
+            
+        Returns:
+            bool: True if this is a button directory
+        """
+        try:
+            # Get relative path from config directory
+            rel_path = os.path.relpath(dir_path, self.config_dir)
+            
+            # Check if it's a direct child (button directory)
+            if os.sep in rel_path:
+                return False  # Not a direct child
+                
+            # Check if directory name starts with digits (button pattern)
+            return len(rel_path) >= 2 and rel_path[:2].isdigit()
+            
+        except Exception:
+            return False
             
     def _get_debounce_key(self, file_path: str) -> str:
         """Generate debounce key for file path.

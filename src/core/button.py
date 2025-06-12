@@ -13,7 +13,7 @@ from .processes import ProcessManager
 class Button:
     """Encapsulates a single Stream Deck button."""
     
-    def __init__(self, button_id: int, config_dir: str, event_bus: EventBus, deck=None):
+    def __init__(self, button_id: int, config_dir: str, event_bus: EventBus, deck=None, manager=None):
         """Initialize button.
         
         Args:
@@ -21,11 +21,13 @@ class Button:
             config_dir: Base configuration directory
             event_bus: Event bus for communication
             deck: Stream Deck device
+            manager: StreamDeckManager instance
         """
         self.button_id = button_id
         self.config_dir = config_dir
         self.event_bus = event_bus
         self.deck = deck
+        self.manager = manager
         
         # Button directory (e.g., "01_toggle_mute")
         self.button_dir = self._find_button_directory()
@@ -81,6 +83,8 @@ class Button:
             self.process_manager = ProcessManager(self.working_dir)
         else:
             self.process_manager = None
+            # Clear button image if no directory
+            self._clear_button_image()
             
         # Load new configuration
         self.load_config()
@@ -160,6 +164,11 @@ class Button:
         # Unsubscribe from events
         self.event_bus.unsubscribe("BUTTON_PRESSED", self._handle_button_press)
         self.event_bus.unsubscribe("FILE_CHANGED", self._handle_file_change)
+        
+    def _clear_button_image(self):
+        """Clear button image on device."""
+        if self.manager:
+            self.manager.clear_buttons(self.button_id)
         
     def _find_button_directory(self) -> Optional[str]:
         """Find button directory by number.
