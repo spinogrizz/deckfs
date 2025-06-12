@@ -1,5 +1,10 @@
 # stream-deck-fs
 
+[![Tests](https://github.com/spinogrizz/stream-deck-fs/workflows/Tests/badge.svg)](https://github.com/spinogrizz/stream-deck-fs/actions)
+[![codecov](https://codecov.io/gh/spinogrizz/stream-deck-fs/branch/master/graph/badge.svg)](https://codecov.io/gh/spinogrizz/stream-deck-fs)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A Linux daemon for controlling Stream Deck devices without GUI through filesystem interface.
 
 ## Overview
@@ -43,6 +48,23 @@ echo 'print("Button 2 pressed!")' > ~/.local/streamdeck/02/action.py
 3. Start the daemon:
 ```bash
 stream-deck-fs
+```
+
+## Development
+
+### Running tests
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Run specific test file
+make test-single FILE=test_debouncer.py
 ```
 
 ## Configuration Structure

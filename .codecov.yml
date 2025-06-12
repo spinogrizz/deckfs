@@ -1,0 +1,20 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 5%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - "tests/"
+  - "examples/"
+  - "debug.py"
+  - "setup.py"
+
+comment:
+  layout: "header, diff, flags, files"
+  behavior: default
+  require_changes: false
