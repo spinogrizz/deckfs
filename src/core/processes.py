@@ -7,6 +7,7 @@ from typing import Dict, Optional, List
 from collections import defaultdict
 
 from ..utils.config import SUPPORTED_SCRIPTS
+from ..utils.file_utils import find_file
 
 
 class ProcessManager:
@@ -62,11 +63,11 @@ class ProcessManager:
         try:
             executor = self.script_executors.get(script_type)
             if not executor:
-                print(f"Unsupported script type: {script_type}")
+                print(f"Unknown script type: {script_type}")
                 return False
                 
             return executor(cmd, script_path)
-            
+                
         except Exception as e:
             print(f"Error starting {script_type} script {script_name}: {e}")
             return False
@@ -168,13 +169,7 @@ class ProcessManager:
         Returns:
             Optional[str]: Full path to script file or None
         """
-        import os
-        
-        for ext in SUPPORTED_SCRIPTS.keys():
-            script_path = os.path.join(self.working_dir, f"{script_name}.{ext}")
-            if os.path.isfile(script_path):
-                return script_path
-        return None
+        return find_file(self.working_dir, script_name, list(SUPPORTED_SCRIPTS.keys()))
         
     def _execute_action(self, cmd: List[str], script_path: str) -> bool:
         """Execute action script - run once and exit."""

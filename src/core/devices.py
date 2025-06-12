@@ -94,7 +94,7 @@ class StreamDeckManager:
         """
         # Stop old button
         if button_id in self.buttons:
-            self.buttons[button_id].cleanup()
+            self.buttons[button_id].stop()
             del self.buttons[button_id]
         
         # Create new button
@@ -125,7 +125,7 @@ class StreamDeckManager:
         
         # Clean up old buttons
         for button_id, old_button in old_buttons.items():
-            old_button.cleanup()
+            old_button.stop()
                 
         # Load and start new buttons
         self._load_all_buttons()
@@ -148,7 +148,7 @@ class StreamDeckManager:
             return
             
         button = self.buttons[button_id]
-        image_path = button.get_image_path()
+        image_path = button._find_image_file()
         
         if not image_path:
             print(f"Button {button_id:02d}: No image file found")
@@ -252,7 +252,7 @@ class StreamDeckManager:
         """Create button instances."""
         # Clear existing buttons
         for button in self.buttons.values():
-            button.cleanup()
+            button.stop()
         self.buttons.clear()
         
         # Create new buttons
@@ -403,31 +403,22 @@ class StreamDeckManager:
         file_path = event.data.get("path", "")
         event_type = event.data.get("event_type", "")
         
-        # Find which button this file belongs to
         button_id = self._extract_button_id_from_path(file_path)
-        if not button_id:
-            print(f"Could not extract button_id from path: {file_path}")
-            return
-        if button_id not in self.buttons:
-            print(f"Button {button_id:02d} not found in buttons")
+        if not button_id or button_id not in self.buttons:
             return
             
         filename = os.path.basename(file_path)
         
-        # Handle image changes
         if filename.startswith("image."):
             print(f"Button {button_id:02d}: Image file {event_type} ({filename})")
             self.update_button_image(button_id)
-            
-        # Handle script changes - only for actual modifications, not just opens/closes
-        elif filename.startswith("background.") and event_type == "modified":
-            print(f"Button {button_id:02d}: Background script changed")
-            self.buttons[button_id].handle_script_change("background")
-                
-        elif filename.startswith("update.") and event_type == "modified":
-            print(f"Button {button_id:02d}: Update script changed") 
-            self.buttons[button_id].handle_script_change("update")
-            self.update_button_image(button_id)  # Update image after update script
+        elif event_type == "modified":
+            if filename.startswith("background."):
+                print(f"Button {button_id:02d}: Background script changed")
+                self.buttons[button_id].handle_script_change("background")
+            elif filename.startswith("update."):
+                print(f"Button {button_id:02d}: Update script changed")
+                self.buttons[button_id].handle_script_change("update")
         
         
     def _handle_button_directories_changed(self, event):

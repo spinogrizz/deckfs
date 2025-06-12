@@ -4,6 +4,7 @@ import os
 import threading
 from typing import Optional
 from .processes import ProcessManager
+from ..utils.file_utils import find_any_file
 
 
 class Button:
@@ -81,18 +82,6 @@ class Button:
         """Handle button press."""
         self.process_manager.start_script("action", "action")
         
-    def get_image_path(self) -> Optional[str]:
-        """Get path to button image file.
-        
-        Returns:
-            Optional[str]: Path to image file or None if not found
-        """
-        return self._find_image_file()
-            
-    def cleanup(self):
-        """Clean up resources."""
-        self.stop()
-        
         
     def _find_image_file(self) -> Optional[str]:
         """Find image file for button.
@@ -100,14 +89,7 @@ class Button:
         Returns:
             Optional[str]: Path to image file or None
         """
-        # Check for image.png, image.jpg, etc. in working directory
-        for filename in os.listdir(self.working_dir):
-            if filename.startswith("image."):
-                full_path = os.path.join(self.working_dir, filename)
-                if os.path.isfile(full_path) or os.path.islink(full_path):
-                    return full_path
-                    
-        return None
+        return find_any_file(self.working_dir, "image")
     
     def handle_script_change(self, script_type: str):
         """Handle script file change.
