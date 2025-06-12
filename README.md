@@ -120,7 +120,15 @@ sudo udevadm trigger
 
 ## Examples
 
-### Dynamic Image Switching
+See the `examples/` directory for comprehensive examples in different programming languages:
+
+- **01_toggle_mute** (Bash) - Toggle system audio mute with visual feedback
+- **02_launch_firefox** (Python) - Smart Firefox launcher with profile support  
+- **03_next_track** (JavaScript) - Advanced media player control via D-Bus
+
+Each example includes detailed setup instructions, documentation, and demonstrates different integration approaches.
+
+### Quick Dynamic Image Switching
 ```bash
 # Create images
 cp status-online.png ~/.local/streamdeck/01/online.png
@@ -129,34 +137,6 @@ cp status-offline.png ~/.local/streamdeck/01/offline.png
 # Switch between them using symlinks
 ln -sf online.png ~/.local/streamdeck/01/image.png   # Shows online
 ln -sf offline.png ~/.local/streamdeck/01/image.png  # Shows offline
-```
-
-### Multi-step Action Script
-```bash
-cat > ~/.local/streamdeck/01/action.sh << 'EOF'
-#!/bin/bash
-# Toggle audio output
-if pactl list short sinks | grep -q analog-stereo; then
-    pactl set-card-profile 0 output:hdmi-stereo
-    ln -sf hdmi-icon.png ~/.local/streamdeck/01/image.png
-else
-    pactl set-card-profile 0 output:analog-stereo  
-    ln -sf speaker-icon.png ~/.local/streamdeck/01/image.png
-fi
-EOF
-chmod +x ~/.local/streamdeck/01/action.sh
-```
-
-### Python Script Example
-```python
-#!/usr/bin/env python3
-# ~/.local/streamdeck/02/action.py
-import subprocess
-import os
-
-# Take screenshot
-subprocess.run(['gnome-screenshot', '-f', f'/tmp/screenshot-{os.getpid()}.png'])
-print("Screenshot taken!")
 ```
 
 ## Troubleshooting
