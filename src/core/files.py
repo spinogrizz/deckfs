@@ -20,6 +20,7 @@ class FileWatcher(FileSystemEventHandler):
         self.event_bus = event_bus
         self.config_dir = config_dir
         self.observer: Observer = None
+        self.file_types = ["image", "background", "update", "action"]
         
     def start_watching(self):
         """Start watching file system."""
@@ -159,15 +160,10 @@ class FileWatcher(FileSystemEventHandler):
                 return None
                 
             # Create debounce key based on button and file type
-            if filename.startswith("image."):
-                return f"{button_dir}:image"
-            elif filename.startswith("background."):
-                return f"{button_dir}:background"
-            elif filename.startswith("update."):
-                return f"{button_dir}:update"
-            elif filename.startswith("action."):
-                return f"{button_dir}:action"
-                
+            for file_type in self.file_types:
+                if filename.startswith(f"{file_type}."):
+                    return f"{button_dir}:{file_type}"
+                    
             return None
             
         except Exception as e:

@@ -24,6 +24,11 @@ class ProcessManager:
         self.restart_limits = 5
         self.restart_window = 300  # 5 minutes
         self.lock = threading.RLock()
+        self.script_executors = {
+            "action": self._execute_action,
+            "update": self._execute_update,
+            "background": self._execute_background
+        }
         
     def start_script(self, script_type: str, script_name: str) -> bool:
         """Start script of given type.
@@ -55,35 +60,12 @@ class ProcessManager:
             return False
             
         try:
-            with self.lock:
-                if script_type == "action":
-                    # Action scripts run once and exit
-                    process = subprocess.Popen(
-                        cmd + [script_path],
-                        cwd=self.working_dir
-                    )
-                elif script_type == "update":
-                    # Update scripts run synchronously
-                    result = subprocess.run(
-                        cmd + [script_path],
-                        cwd=self.working_dir,
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-                    return result.returncode == 0
-                elif script_type == "background":
-                    # Background scripts run continuously
-                    process = subprocess.Popen(
-                        cmd + [script_path],
-                        cwd=self.working_dir,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True
-                    )
-                    self.processes[script_type] = process
-                    
-            return True
+            executor = self.script_executors.get(script_type)
+            if not executor:
+                print(f"Unsupported script type: {script_type}")
+                return False
+                
+            return executor(cmd, script_path)
             
         except Exception as e:
             print(f"Error starting {script_type} script {script_name}: {e}")
@@ -193,3 +175,32 @@ class ProcessManager:
             if os.path.isfile(script_path):
                 return script_path
         return None
+        
+    def _execute_action(self, cmd: List[str], script_path: str) -> bool:
+        """Execute action script - run once and exit."""
+        subprocess.Popen(cmd + [script_path], cwd=self.working_dir)
+        return True
+        
+    def _execute_update(self, cmd: List[str], script_path: str) -> bool:
+        """Execute update script - run synchronously."""
+        result = subprocess.run(
+            cmd + [script_path],
+            cwd=self.working_dir,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        return result.returncode == 0
+        
+    def _execute_background(self, cmd: List[str], script_path: str) -> bool:
+        """Execute background script - run continuously."""
+        with self.lock:
+            process = subprocess.Popen(
+                cmd + [script_path],
+                cwd=self.working_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            self.processes["background"] = process
+        return True
