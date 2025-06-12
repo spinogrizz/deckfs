@@ -9,7 +9,7 @@ from StreamDeck.ImageHelpers import PILHelper
 from ..utils.debouncer import Debouncer
 from .files import FileWatcher
 from .button import Button
-from ..utils.config import DEFAULT_BRIGHTNESS
+from ..utils.config import ConfigManager
 
 
 class StreamDeckManager:
@@ -28,8 +28,12 @@ class StreamDeckManager:
         self.deck = None
         self.key_count = 0
         
+        # Configuration manager
+        self.config_manager = ConfigManager(config_dir)
+        
         # Core components
-        self.debouncer = Debouncer(debounce_interval=0.1)
+        debounce_interval = self.config_manager.get_debounce_interval()
+        self.debouncer = Debouncer(debounce_interval=debounce_interval)
         self.file_watcher = FileWatcher(self.debouncer, config_dir)
         self.buttons: Dict[int, Button] = {}
         
@@ -234,7 +238,8 @@ class StreamDeckManager:
             self.deck = devices[0]
             self.deck.open()
             self.deck.reset()
-            self.deck.set_brightness(DEFAULT_BRIGHTNESS)
+            brightness = self.config_manager.get_brightness()
+            self.deck.set_brightness(brightness)
             
             self.key_count = self.deck.key_count()
             print(f"Found device: {self.deck.deck_type()} with {self.key_count} buttons")
