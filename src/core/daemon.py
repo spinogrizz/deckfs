@@ -8,6 +8,7 @@ from watchdog.observers import Observer
 
 from ..handlers.file_handler import ImageChangeHandler
 from ..utils.device import DeviceManager as SDDeviceManager
+from ..utils.script_manager import ScriptManager
 from ..utils.config import CONFIG_DIR
 
 
@@ -22,6 +23,7 @@ class StreamDeckDaemon:
         """
         self.config_dir = config_dir or CONFIG_DIR
         self.device_manager = None
+        self.script_manager = None
         self.observer = None
         self.running = False
         
@@ -41,13 +43,17 @@ class StreamDeckDaemon:
         # Initialize device
         self.initialize_device()
         
+        # Initialize script manager
+        self.script_manager = ScriptManager(self.config_dir, self.device_manager)
+        self.script_manager.start()
+        
         # Load initial images
         self.device_manager.load_initial_images(self.config_dir)
         
         # Setup file watcher
         self.observer = Observer()
         self.observer.schedule(
-            ImageChangeHandler(self.device_manager), 
+            ImageChangeHandler(self.device_manager, self.script_manager), 
             path=self.config_dir, 
             recursive=True
         )
@@ -67,6 +73,9 @@ class StreamDeckDaemon:
         if self.observer:
             self.observer.stop()
             self.observer.join()
+            
+        if self.script_manager:
+            self.script_manager.stop()
             
         if self.device_manager:
             self.device_manager.cleanup()

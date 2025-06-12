@@ -46,29 +46,37 @@ class DeviceManager:
             print(f"Stream Deck initialization error: {e}")
             return False
     
-    def update_key_image(self, key_index):
+    def update_key_image(self, key_index, button_dir=None):
         """Update button image.
         
         Args:
             key_index: Button index (starting from 0)
+            button_dir: Optional button directory name (for external calls)
         """
         if not self.deck:
             return
             
         config_dir = os.path.expanduser("~/.local/streamdeck")
         
-        # Find folder that starts with the key number (e.g., "01_light", "02_launch_app")
-        button_num = f"{key_index+1:02d}"
-        folder_path = None
-        
-        if os.path.exists(config_dir):
-            for folder in os.listdir(config_dir):
-                if folder.startswith(button_num) and os.path.isdir(os.path.join(config_dir, folder)):
-                    folder_path = os.path.join(config_dir, folder)
-                    break
+        # Use provided button_dir or find folder that starts with the key number
+        if button_dir:
+            folder_path = os.path.join(config_dir, button_dir)
+            if not os.path.isdir(folder_path):
+                folder_path = None
+        else:
+            # Find folder that starts with the key number (e.g., "01_light", "02_launch_app")
+            button_num = f"{key_index+1:02d}"
+            folder_path = None
+            
+            if os.path.exists(config_dir):
+                for folder in os.listdir(config_dir):
+                    if folder.startswith(button_num) and os.path.isdir(os.path.join(config_dir, folder)):
+                        folder_path = os.path.join(config_dir, folder)
+                        break
         
         if not folder_path:
-            print(f"No folder found for button {button_num}")
+            button_ref = button_dir if button_dir else f"button {f'{key_index+1:02d}'}"
+            print(f"No folder found for {button_ref}")
             return
             
         img_path = os.path.join(folder_path, "image.png")
