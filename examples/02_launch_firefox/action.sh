@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-# Try to focus Firefox window or launch a new instance
-
 # Try to focus using dbus
 if command -v dbus-send >/dev/null 2>&1; then
     dbus-send --session --type=method_call \

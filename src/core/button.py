@@ -34,20 +34,16 @@ class Button:
         if not os.path.isdir(self.working_dir):
             return False
             
-        # Execute update script if exists
         self.process_manager.start_script("update", "update")
         
         return True
         
     def reload(self):
         """Reload button configuration."""
-        # Stop current processes
         self.stop()
         
-        # Recreate process manager
         self.process_manager = ProcessManager(self.working_dir)
             
-        # Load new configuration
         self.load_config()
         self.start()
         

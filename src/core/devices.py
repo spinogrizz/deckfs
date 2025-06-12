@@ -49,17 +49,13 @@ class StreamDeckManager:
         Returns:
             bool: True if initialization successful
         """
-        # Initialize device
         if not self._initialize_device():
             return False
             
-        # Create buttons
         self._create_buttons()
         
-        # Load button configurations
         self._load_all_buttons()
         
-        # Start file watcher
         self.file_watcher.start_watching()
         
         print(f"Stream Deck manager initialized with {len(self.buttons)} buttons")
@@ -73,17 +69,13 @@ class StreamDeckManager:
         
     def stop(self):
         """Stop all components."""
-        # Stop buttons
         for button in self.buttons.values():
             button.stop()
             
-        # Stop file watcher
         self.file_watcher.stop_watching()
         
-        # Shutdown event bus
         self.debouncer.shutdown()
         
-        # Close device
         if self.deck:
             self.deck.close()
             self.deck = None
@@ -96,7 +88,6 @@ class StreamDeckManager:
         Args:
             button_id: Button ID to reload (1-based)
         """
-        # Stop old button
         if button_id in self.buttons:
             self.buttons[button_id].stop()
             del self.buttons[button_id]
@@ -111,7 +102,6 @@ class StreamDeckManager:
                 self.update_button_image(button_id)
             print(f"Button {button_id:02d} reloaded")
         else:
-            # Clear button if no directory
             self.clear_buttons(button_id)
             print(f"Button {button_id:02d} removed")
             
@@ -119,7 +109,6 @@ class StreamDeckManager:
         """Reload all buttons."""
         print("Reloading all buttons...")
         
-        # Stop all buttons
         for button in self.buttons.values():
             button.stop()
             
@@ -131,7 +120,6 @@ class StreamDeckManager:
         for button_id, old_button in old_buttons.items():
             old_button.stop()
                 
-        # Load and start new buttons
         self._load_all_buttons()
         self.start()
         
@@ -159,19 +147,15 @@ class StreamDeckManager:
             return
             
         try:
-            # Load and scale image
             image = Image.open(image_path)
             image_bytes = PILHelper.to_native_format(
                 self.deck,
                 PILHelper.create_scaled_image(self.deck, image)
             )
             
-            # Set image on device
             key_index = button_id - 1  # Convert to 0-based index
             self.deck.set_key_image(key_index, image_bytes)
-            
-            print(f"Button {button_id:02d}: Image updated from {image_path}")
-            
+                        
         except Exception as e:
             print(f"Button {button_id:02d}: Error updating image: {e}")
         
@@ -209,12 +193,10 @@ class StreamDeckManager:
             )
             
             if button_id is None:
-                # Clear all buttons
                 for key_index in range(self.key_count):
                     self.deck.set_key_image(key_index, image_bytes)
                 print(f"All {self.key_count} buttons cleared")
             else:
-                # Clear specific button
                 if 1 <= button_id <= self.key_count:
                     key_index = button_id - 1
                     self.deck.set_key_image(key_index, image_bytes)
@@ -255,12 +237,10 @@ class StreamDeckManager:
             
     def _create_buttons(self):
         """Create button instances."""
-        # Clear existing buttons
         for button in self.buttons.values():
             button.stop()
         self.buttons.clear()
         
-        # Create new buttons
         for button_id in range(1, self.key_count + 1):
             working_dir = self._find_button_working_dir(button_id)
             if working_dir:
@@ -273,7 +253,6 @@ class StreamDeckManager:
             if button.load_config():
                 self.update_button_image(button_id)
             else:
-                # Clear button if no config
                 self.clear_buttons(button_id)
             
     def _smart_reload_affected_buttons(self, event_type: str, src_path: str, dest_path: str):

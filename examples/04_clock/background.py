@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# Update scripts that redraw the clock image every minute
+
 import time
 from update import draw_clock
 

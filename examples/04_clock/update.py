@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
+# Update script that redraws the clock image 
+
 def draw_clock():
     now = datetime.now()
     hours = now.strftime("%H")

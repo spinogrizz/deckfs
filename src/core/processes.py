@@ -41,19 +41,15 @@ class ProcessManager:
         Returns:
             bool: True if script started successfully
         """
-        # Check if already running for background scripts
         if script_type == "background" and self.is_running(script_type):
             return True
             
-        # Stop existing process
         self.stop_script(script_type)
         
-        # Find script file
         script_path = self._find_script_file(script_name)
         if not script_path:
             return False
             
-        # Get command for script extension
         ext = script_path.split('.')[-1]
         cmd = SUPPORTED_SCRIPTS.get(ext)
         if not cmd:
@@ -108,21 +104,17 @@ class ProcessManager:
         key = f"{script_type}:{script_name}"
         
         with self.lock:
-            # Clean old crash timestamps
             self.crash_timestamps[key] = [
                 ts for ts in self.crash_timestamps[key]
                 if current_time - ts < self.restart_window
             ]
             
-            # Add current crash
             self.crash_timestamps[key].append(current_time)
             
-            # Check restart limits
             if len(self.crash_timestamps[key]) > self.restart_limits:
                 print(f"Script {script_name} crashed too many times. Giving up.")
                 return False
                 
-        # Wait before restart
         time.sleep(2)
         return self.start_script(script_type, script_name)
         

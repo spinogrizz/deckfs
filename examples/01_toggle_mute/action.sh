@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# Toggle system audio mute state and update button image accordingly
-# This script toggles mute state and calls update.sh to refresh the button image
+# Toggle system audio mute state
+# Image change will be handled automatically by background.sh monitoring
 
-# Get current mute state (0 = not muted, 1 = muted)
 MUTED=$(pactl get-sink-mute @DEFAULT_SINK@ | grep -o "yes\|no")
 
 if [ "$MUTED" = "yes" ]; then
@@ -12,4 +11,3 @@ else
     pactl set-sink-mute @DEFAULT_SINK@ 1
 fi
 
-# Update image script will be called by background.sh
