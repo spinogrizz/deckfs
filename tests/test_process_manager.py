@@ -284,6 +284,180 @@ class TestProcessManager(unittest.TestCase):
         # Verify Popen was only called once
         self.assertEqual(mock_popen.call_count, 1)
 
+    def test_load_env_vars_success(self):
+        """Test successful loading of environment variables from env.local."""
+        # Create config directory (parent of working directory)
+        config_dir = os.path.dirname(self.temp_dir)
+        env_file_path = os.path.join(config_dir, "env.local")
+        
+        # Create env.local file with various formats
+        env_content = """# Environment variables for stream-deck-fs
+API_KEY=test_api_key_12345
+DATABASE_URL=sqlite:///test.db
+DEBUG_MODE=true
+APP_NAME="Stream Deck Test"
+QUOTED_VAR='single quotes'
+
+# Another comment
+LAST_VAR=final_value
+SPACES_VAR = value with spaces
+"""
+        with open(env_file_path, 'w') as f:
+            f.write(env_content)
+        
+        try:
+            # Test env vars loading
+            env_vars = self.process_manager._load_env_vars()
+            
+            # Verify expected variables
+            expected = {
+                'API_KEY': 'test_api_key_12345',
+                'DATABASE_URL': 'sqlite:///test.db',
+                'DEBUG_MODE': 'true',
+                'APP_NAME': 'Stream Deck Test',
+                'QUOTED_VAR': 'single quotes',
+                'LAST_VAR': 'final_value',
+                'SPACES_VAR': 'value with spaces'
+            }
+            
+            for key, expected_value in expected.items():
+                self.assertIn(key, env_vars)
+                self.assertEqual(env_vars[key], expected_value)
+                
+        finally:
+            # Clean up
+            if os.path.exists(env_file_path):
+                os.remove(env_file_path)
+
+    def test_load_env_vars_no_file(self):
+        """Test loading environment variables when env.local doesn't exist."""
+        # Ensure no env.local file exists
+        config_dir = os.path.dirname(self.temp_dir)
+        env_file_path = os.path.join(config_dir, "env.local")
+        if os.path.exists(env_file_path):
+            os.remove(env_file_path)
+        
+        # Test env vars loading
+        env_vars = self.process_manager._load_env_vars()
+        
+        # Should return empty dict
+        self.assertEqual(env_vars, {})
+
+    def test_load_env_vars_invalid_format(self):
+        """Test handling of invalid lines in env.local."""
+        # Create config directory
+        config_dir = os.path.dirname(self.temp_dir)
+        env_file_path = os.path.join(config_dir, "env.local")
+        
+        # Create env.local with invalid lines
+        env_content = """VALID_VAR=valid_value
+invalid_line_without_equals
+ANOTHER_VALID=another_value
+=invalid_equals_format
+"""
+        with open(env_file_path, 'w') as f:
+            f.write(env_content)
+        
+        try:
+            # Test env vars loading
+            env_vars = self.process_manager._load_env_vars()
+            
+            # Should only load valid variables
+            expected = {
+                'VALID_VAR': 'valid_value',
+                'ANOTHER_VALID': 'another_value'
+            }
+            
+            self.assertEqual(env_vars, expected)
+            
+        finally:
+            # Clean up
+            if os.path.exists(env_file_path):
+                os.remove(env_file_path)
+
+    @patch('subprocess.Popen')
+    def test_script_execution_with_env_vars(self, mock_popen):
+        """Test that scripts are executed with environment variables."""
+        # Create config directory and env.local file
+        config_dir = os.path.dirname(self.temp_dir)
+        env_file_path = os.path.join(config_dir, "env.local")
+        
+        env_content = """API_KEY=test_key_123
+DEBUG_MODE=true
+"""
+        with open(env_file_path, 'w') as f:
+            f.write(env_content)
+        
+        try:
+            # Create test script
+            self._create_test_script("action.sh", "echo 'test'")
+            
+            # Execute script
+            self.process_manager.start_script("action", "action")
+            
+            # Verify Popen was called with env parameter
+            mock_popen.assert_called_once()
+            call_args = mock_popen.call_args
+            
+            # Check that env parameter was passed and contains our variables
+            self.assertIn('env', call_args.kwargs)
+            env = call_args.kwargs['env']
+            
+            # Verify our environment variables are included
+            self.assertIn('API_KEY', env)
+            self.assertEqual(env['API_KEY'], 'test_key_123')
+            self.assertIn('DEBUG_MODE', env)
+            self.assertEqual(env['DEBUG_MODE'], 'true')
+            
+            # Verify system environment variables are preserved
+            self.assertIn('PATH', env)  # System env var should be preserved
+            
+        finally:
+            # Clean up
+            if os.path.exists(env_file_path):
+                os.remove(env_file_path)
+
+    @patch('subprocess.run')
+    def test_update_script_execution_with_env_vars(self, mock_run):
+        """Test that update scripts are executed with environment variables."""
+        # Create config directory and env.local file
+        config_dir = os.path.dirname(self.temp_dir)
+        env_file_path = os.path.join(config_dir, "env.local")
+        
+        env_content = """DATABASE_URL=sqlite:///test.db
+"""
+        with open(env_file_path, 'w') as f:
+            f.write(env_content)
+        
+        # Setup mock
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+        
+        try:
+            # Create test script
+            self._create_test_script("update.py", "print('update')")
+            
+            # Execute script
+            self.process_manager.start_script("update", "update")
+            
+            # Verify subprocess.run was called with env parameter
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            
+            # Check that env parameter was passed and contains our variables
+            self.assertIn('env', call_args.kwargs)
+            env = call_args.kwargs['env']
+            
+            # Verify our environment variables are included
+            self.assertIn('DATABASE_URL', env)
+            self.assertEqual(env['DATABASE_URL'], 'sqlite:///test.db')
+            
+        finally:
+            # Clean up
+            if os.path.exists(env_file_path):
+                os.remove(env_file_path)
+
 
 if __name__ == '__main__':
     unittest.main()

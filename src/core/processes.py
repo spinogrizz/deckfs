@@ -3,6 +3,7 @@
 import subprocess
 import threading
 import time
+import os
 from typing import Dict, Optional, List
 from collections import defaultdict
 
@@ -30,6 +31,9 @@ class ProcessManager:
             "update": self._execute_update,
             "background": self._execute_background
         }
+        
+        # Find config directory from working_dir (go up one level from button directory)
+        self.config_dir = os.path.dirname(working_dir)
         
     def start_script(self, script_type: str, script_name: str) -> bool:
         """Start script of given type.
@@ -167,22 +171,74 @@ class ProcessManager:
         """
         return find_file(self.working_dir, script_name, list(SUPPORTED_SCRIPTS.keys()))
         
+    def _load_env_vars(self) -> Dict[str, str]:
+        """Load environment variables from env.local file.
+        
+        Returns:
+            Dict[str, str]: Environment variables as key-value pairs
+        """
+        env_vars = {}
+        env_file_path = os.path.join(self.config_dir, "env.local")
+        
+        if not os.path.exists(env_file_path):
+            return env_vars
+            
+        try:
+            with open(env_file_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    
+                    # Skip empty lines and comments
+                    if not line or line.startswith('#'):
+                        continue
+                        
+                    # Parse KEY=VALUE pairs
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # Skip if key is empty
+                        if not key:
+                            print(f"Invalid line in env.local:{line_num}: {line}")
+                            continue
+                        
+                        # Remove quotes if present
+                        if value.startswith('"') and value.endswith('"'):
+                            value = value[1:-1]
+                        elif value.startswith("'") and value.endswith("'"):
+                            value = value[1:-1]
+                            
+                        env_vars[key] = value
+                    else:
+                        print(f"Invalid line in env.local:{line_num}: {line}")
+                        
+        except Exception as e:
+            print(f"Error reading env.local file: {e}")
+            
+        return env_vars
+        
     def _execute_action(self, cmd: List[str], script_path: str) -> bool:
         """Execute action script - run once and exit."""
         # Fire-and-forget: action scripts handle immediate button responses
-        subprocess.Popen(cmd + [script_path], cwd=self.working_dir)
+        env = os.environ.copy()
+        env.update(self._load_env_vars())
+        subprocess.Popen(cmd + [script_path], cwd=self.working_dir, env=env)
         return True
         
     def _execute_update(self, cmd: List[str], script_path: str) -> bool:
         """Execute update script - run synchronously."""
         # Synchronous execution: update scripts must complete before button starts
         # 30-second timeout prevents hanging on unresponsive scripts
+        env = os.environ.copy()
+        env.update(self._load_env_vars())
         result = subprocess.run(
             cmd + [script_path],
             cwd=self.working_dir,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
+            env=env
         )
         return result.returncode == 0
         
@@ -190,12 +246,15 @@ class ProcessManager:
         """Execute background script - run continuously."""
         # Store process handle for monitoring and lifecycle management
         with self.lock:
+            env = os.environ.copy()
+            env.update(self._load_env_vars())
             process = subprocess.Popen(
                 cmd + [script_path],
                 cwd=self.working_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                env=env
             )
             self.processes["background"] = process
         return True
