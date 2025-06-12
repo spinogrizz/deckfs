@@ -156,7 +156,6 @@ class StreamDeckManager:
             
         try:
             # Load and scale image
-            print(f"Button {button_id:02d}: Loading image from {image_path}")
             image = Image.open(image_path)
             image_bytes = PILHelper.to_native_format(
                 self.deck,
@@ -402,7 +401,7 @@ class StreamDeckManager:
             event: File change event
         """
         file_path = event.data.get("path", "")
-        print(f"[FILE_CHANGED] {file_path}")
+        event_type = event.data.get("event_type", "")
         
         # Find which button this file belongs to
         button_id = self._extract_button_id_from_path(file_path)
@@ -417,15 +416,15 @@ class StreamDeckManager:
         
         # Handle image changes
         if filename.startswith("image."):
-            print(f"Button {button_id:02d}: Image file changed ({filename})")
+            print(f"Button {button_id:02d}: Image file {event_type} ({filename})")
             self.update_button_image(button_id)
             
-        # Handle script changes
-        elif filename.startswith("background."):
+        # Handle script changes - only for actual modifications, not just opens/closes
+        elif filename.startswith("background.") and event_type == "modified":
             print(f"Button {button_id:02d}: Background script changed")
             self.buttons[button_id].handle_script_change("background")
                 
-        elif filename.startswith("update."):
+        elif filename.startswith("update.") and event_type == "modified":
             print(f"Button {button_id:02d}: Update script changed") 
             self.buttons[button_id].handle_script_change("update")
             self.update_button_image(button_id)  # Update image after update script

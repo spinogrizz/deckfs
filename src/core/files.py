@@ -52,10 +52,15 @@ class FileWatcher(FileSystemEventHandler):
             return
             
         # Handle file events
-        file_path = getattr(event, 'dest_path', event.src_path)
+        file_path = getattr(event, 'dest_path', None) or event.src_path
         
         # Skip if no valid file path
         if not file_path:
+            return
+            
+        # Skip opened/closed events that don't indicate actual file changes
+        # to prevent infinite loops when daemon reads files
+        if event.event_type in ['opened', 'closed_no_write']:
             return
             
         debounce_key = self._get_debounce_key(file_path)
