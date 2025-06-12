@@ -1,7 +1,6 @@
 # stream-deck-fs
 
 [![Tests](https://github.com/spinogrizz/stream-deck-fs/workflows/Tests/badge.svg)](https://github.com/spinogrizz/stream-deck-fs/actions)
-[![codecov](https://codecov.io/gh/spinogrizz/stream-deck-fs/branch/master/graph/badge.svg)](https://codecov.io/gh/spinogrizz/stream-deck-fs)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
