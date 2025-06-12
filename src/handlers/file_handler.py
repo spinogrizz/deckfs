@@ -40,8 +40,12 @@ class ImageChangeHandler(FileSystemEventHandler):
         rel_path = os.path.relpath(dirname, CONFIG_DIR)
         folder = rel_path if rel_path != '.' else os.path.basename(dirname)
         
+        # Extract first two digits from folder name (e.g., "01_light" -> "01")
         try:
-            key_index = int(folder) - 1
+            if len(folder) >= 2 and folder[:2].isdigit():
+                key_index = int(folder[:2]) - 1
+            else:
+                raise ValueError("Folder name doesn't start with two digits")
         except ValueError:
             print(f"[ERROR] Cannot determine button number from folder: {folder}")
             return

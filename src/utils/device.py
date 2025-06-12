@@ -56,7 +56,22 @@ class DeviceManager:
             return
             
         config_dir = os.path.expanduser("~/.local/streamdeck")
-        img_path = os.path.join(config_dir, f"{key_index+1:02d}", "image.png")
+        
+        # Find folder that starts with the key number (e.g., "01_light", "02_launch_app")
+        button_num = f"{key_index+1:02d}"
+        folder_path = None
+        
+        if os.path.exists(config_dir):
+            for folder in os.listdir(config_dir):
+                if folder.startswith(button_num) and os.path.isdir(os.path.join(config_dir, folder)):
+                    folder_path = os.path.join(config_dir, folder)
+                    break
+        
+        if not folder_path:
+            print(f"No folder found for button {button_num}")
+            return
+            
+        img_path = os.path.join(folder_path, "image.png")
         
         # Check file or symlink existence
         if not (os.path.isfile(img_path) or os.path.islink(img_path)):
@@ -109,9 +124,24 @@ class DeviceManager:
             return
             
         config_dir = os.path.expanduser("~/.local/streamdeck")
-        folder = f"{key+1:02d}"
-        folder_path = os.path.join(config_dir, folder)
-        print(f"Button {folder} pressed")
+        button_num = f"{key+1:02d}"
+        
+        # Find folder that starts with the key number
+        folder_path = None
+        folder_name = None
+        
+        if os.path.exists(config_dir):
+            for folder in os.listdir(config_dir):
+                if folder.startswith(button_num) and os.path.isdir(os.path.join(config_dir, folder)):
+                    folder_path = os.path.join(config_dir, folder)
+                    folder_name = folder
+                    break
+        
+        if not folder_path:
+            print(f"No folder found for button {button_num}")
+            return
+            
+        print(f"Button {folder_name} pressed")
         
         # Search and run action script
         for ext, cmd in SUPPORTED_SCRIPTS.items():
