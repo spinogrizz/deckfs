@@ -12,13 +12,15 @@ from ..utils import logger
 class Button:
     """Encapsulates a single Stream Deck button logic."""
     
-    def __init__(self, working_dir: str):
+    def __init__(self, working_dir: str, request_redraw):
         """Initialize button.
         
         Args:
             working_dir: Working directory for this button
+            request_redraw: Callback to request image redraw
         """
         self.working_dir = working_dir
+        self.request_redraw = request_redraw
         
         # Process manager for this button
         self.process_manager = ProcessManager(working_dir)
@@ -28,11 +30,7 @@ class Button:
         self.running = False
         
         # Error state tracking
-        self.has_error = False
-        self.error_message = ""
-        
-        # Callback for error state changes
-        self.on_error_changed = None
+        self.failed = False
         
     def load_config(self) -> bool:
         """Called by StreamDeckManager after button creation to run update script.
@@ -41,14 +39,17 @@ class Button:
             bool: True if configuration loaded successfully
         """
         if not os.path.isdir(self.working_dir):
-            self.set_error(f"Button directory not found: {self.working_dir}")
+            self.failed = True
+            self.request_redraw()
             return False
             
         # Clear any previous errors
-        self.clear_error()
+        if self.failed:
+            self.failed = False
+            self.request_redraw()
         
         # Update script is optional - not finding it is not an error
-        self.process_manager.start_script("update", "update")
+        self.process_manager.start_script("update")
         
         return True
         
@@ -70,7 +71,7 @@ class Button:
         
         # Start background script if exists (only if not already running)
         if not self.process_manager.is_running("background"):
-            self.process_manager.start_script("background", "background")
+            self.process_manager.start_script("background")
         
         # Start monitor thread
         self.monitor_thread = threading.Thread(target=self._monitor_background, daemon=True)
@@ -91,7 +92,7 @@ class Button:
     def handle_press(self):
         """Called by StreamDeckManager when physical button is pressed to execute action script."""
         # Action script is optional - not finding it is not an error
-        success = self.process_manager.start_script("action", "action")
+        success = self.process_manager.start_script("action")
         if success:
             # Start monitoring action script in background thread
             threading.Thread(target=self._monitor_action, daemon=True).start()
@@ -110,30 +111,16 @@ class Button:
         Returns:
             Optional[bytes]: Prepared image bytes or None if error
         """
-        if self.has_error:
-            # Error state - caller should show error image
+        if self.failed:
             return None
             
         image_path = self._find_image_file()
         if not image_path:
-            # No image file found
-            self.set_error(f"No image file found in {self.working_dir}", notify=False)
             return None
             
         try:
-            image_bytes = load_and_prepare_image(deck, image_path)
-            if image_bytes:
-                # Clear any previous image loading errors
-                if self.error_message.startswith("Failed to load image") or self.error_message.startswith("Error loading image"):
-                    self.clear_error(notify=False)
-                return image_bytes
-            else:
-                # Image loading failed
-                self.set_error(f"Failed to load image: {image_path}", notify=False)
-                return None
-                
-        except Exception as e:
-            self.set_error(f"Error loading image: {e}", notify=False)
+            return load_and_prepare_image(deck, image_path)
+        except Exception:
             return None
     
     def file_changed(self, filename: str) -> bool:
@@ -153,17 +140,19 @@ class Button:
         elif filename.startswith("background."):
             logger.debug(f"Background script changed in {self.working_dir}")
             self.process_manager.stop_script("background")
-            success = self.process_manager.start_script("background", "background")
+            success = self.process_manager.start_script("background")
             if success:
-                # Clear any previous error state when background script restarts successfully
-                self.clear_error()
+                if self.failed:
+                    self.failed = False
+                    self.request_redraw()
             else:
-                self.set_error("Failed to restart background script")
+                self.failed = True
+                self.request_redraw()
             return True
         elif filename.startswith("update."):
             logger.debug(f"Update script changed in {self.working_dir}")
             # Update script is optional - not finding it is not an error
-            self.process_manager.start_script("update", "update")
+            self.process_manager.start_script("update")
             return True
         elif filename.startswith("action."):
             logger.debug(f"Action script changed in {self.working_dir}")
@@ -182,9 +171,10 @@ class Button:
             # Check for exit code first (this also removes terminated processes)
             exit_code = self.process_manager.get_exit_code("background")
             if exit_code is not None:
-                success = self.process_manager.restart_script("background", "background")
+                success = self.process_manager.restart_script("background")
                 if not success:
-                    self.set_error("Background script crashed and failed to restart")
+                    self.failed = True
+                    self.request_redraw()
                     
             # Use threading.Event().wait() instead of time.sleep() for better thread responsiveness
             # Allows clean shutdown when self.running becomes False
@@ -199,40 +189,13 @@ class Button:
         
         if exit_code is not None and exit_code != 0:
             # Action failed, show error temporarily
-            self.set_error(f"Action script failed with exit code {exit_code}")
+            self.failed = True
+            self.request_redraw()
             
             # Clear error after 2 seconds to restore normal display
             def clear_action_error():
-                threading.Event().wait(2)
-                self.clear_error()
+                self.failed = False
+                self.request_redraw()
                 
-            threading.Thread(target=clear_action_error, daemon=True).start()
+            threading.Timer(2.0, clear_action_error).start()
     
-    def set_error(self, message: str, notify: bool = True):
-        """Set button error state.
-        
-        Args:
-            message: Error message
-            notify: Whether to notify callback about state change
-        """
-        was_error = self.has_error
-        self.has_error = True
-        self.error_message = message
-        
-        # Notify about error state change
-        if not was_error and notify and self.on_error_changed:
-            self.on_error_changed()
-        
-    def clear_error(self, notify: bool = True):
-        """Clear button error state.
-        
-        Args:
-            notify: Whether to notify callback about state change
-        """
-        was_error = self.has_error
-        self.has_error = False
-        self.error_message = ""
-        
-        # Notify about error state change
-        if was_error and notify and self.on_error_changed:
-            self.on_error_changed()

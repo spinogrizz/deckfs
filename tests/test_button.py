@@ -16,7 +16,7 @@ class TestButton(unittest.TestCase):
     def setUp(self):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
-        self.button = Button(self.temp_dir)
+        self.button = Button(self.temp_dir, lambda: None)
         
     def tearDown(self):
         """Clean up test environment."""
@@ -43,12 +43,12 @@ class TestButton(unittest.TestCase):
             result = self.button.load_config()
             
             self.assertTrue(result)
-            mock_start.assert_called_once_with("update", "update")
+            mock_start.assert_called_once_with("update")
             
     def test_load_config_invalid_directory(self):
         """Test loading config from non-existent directory."""
         # Create button with non-existent directory
-        invalid_button = Button("/nonexistent/path")
+        invalid_button = Button("/nonexistent/path", lambda: None)
         
         result = invalid_button.load_config()
         self.assertFalse(result)
@@ -59,7 +59,7 @@ class TestButton(unittest.TestCase):
             result = self.button.load_config()
             
             self.assertTrue(result)  # Still returns True even if update script doesn't exist
-            mock_start.assert_called_once_with("update", "update")
+            mock_start.assert_called_once_with("update")
             
     def test_start_button_first_time(self):
         """Test starting button for the first time."""
@@ -70,7 +70,7 @@ class TestButton(unittest.TestCase):
             
             self.assertTrue(self.button.running)
             self.assertIsNotNone(self.button.monitor_thread)
-            mock_start.assert_called_once_with("background", "background")
+            mock_start.assert_called_once_with("background")
             
     def test_start_button_already_running(self):
         """Test starting button when already running."""
@@ -118,7 +118,7 @@ class TestButton(unittest.TestCase):
         with patch.object(self.button.process_manager, 'start_script', return_value=True) as mock_start:
             self.button.handle_press()
             
-            mock_start.assert_called_once_with("action", "action")
+            mock_start.assert_called_once_with("action")
             
     def test_find_image_file_existing(self):
         """Test finding existing image file."""
@@ -180,7 +180,7 @@ class TestButton(unittest.TestCase):
             
             self.assertTrue(handled)
             mock_stop.assert_called_once_with("background")
-            mock_start.assert_called_once_with("background", "background")
+            mock_start.assert_called_once_with("background")
             
     def test_file_changed_update_script(self):
         """Test handling update script change."""
@@ -190,7 +190,7 @@ class TestButton(unittest.TestCase):
             handled = self.button.file_changed("update.sh")
             
             self.assertTrue(handled)
-            mock_start.assert_called_once_with("update", "update")
+            mock_start.assert_called_once_with("update")
             mock_stop.assert_not_called()  # Update scripts are not stopped
             
     def test_file_changed_action_script(self):
@@ -228,7 +228,7 @@ class TestButton(unittest.TestCase):
     
     def test_get_image_bytes_error_state(self):
         """Test get_image_bytes when button has error."""
-        self.button.set_error("Test error")
+        self.button.failed = True
         
         # Mock deck object
         mock_deck = unittest.mock.Mock()
@@ -244,8 +244,6 @@ class TestButton(unittest.TestCase):
             result = self.button.get_image_bytes(mock_deck)
             
         self.assertIsNone(result)
-        self.assertTrue(self.button.has_error)
-        self.assertIn("No image file found", self.button.error_message)
     
     def test_get_image_bytes_success(self):
         """Test successful get_image_bytes."""
@@ -258,7 +256,7 @@ class TestButton(unittest.TestCase):
             result = self.button.get_image_bytes(mock_deck)
             
         self.assertEqual(result, mock_image_bytes)
-        self.assertFalse(self.button.has_error)
+        self.assertFalse(self.button.failed)
             
     def test_reload_button(self):
         """Test reloading button configuration."""
@@ -311,7 +309,7 @@ class TestButton(unittest.TestCase):
             monitor_thread.join(timeout=2)
             
             # Should restart crashed process
-            mock_restart.assert_called_with("background", "background")
+            mock_restart.assert_called_with("background")
             
     def test_monitor_background_no_process(self):
         """Test background process monitoring when no background process exists."""
@@ -369,10 +367,10 @@ class TestButton(unittest.TestCase):
             
             # Verify expected calls
             expected_calls = [
-                ("update", "update"),      # From load_config
-                ("background", "background"),  # From start
-                ("action", "action"),      # From handle_press
-                ("background", "background"),  # From handle_script_change
+                ("update",),      # From load_config
+                ("background",),  # From start
+                ("action",),      # From handle_press
+                ("background",),  # From handle_script_change
             ]
             
             # Check that start_script was called with expected arguments

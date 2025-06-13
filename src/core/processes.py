@@ -37,12 +37,11 @@ class ProcessManager:
         # Find config directory from working_dir (go up one level from button directory)
         self.config_dir = os.path.dirname(working_dir)
         
-    def start_script(self, script_type: str, script_name: str) -> bool:
+    def start_script(self, script_type: str) -> bool:
         """Start script of given type.
         
         Args:
             script_type: Type of script (action, update, background)
-            script_name: Name of script file without extension
             
         Returns:
             bool: True if script started successfully
@@ -52,7 +51,7 @@ class ProcessManager:
             
         self.stop_script(script_type)
         
-        script_path = self._find_script_file(script_name)
+        script_path = self._find_script_file(script_type)
         if not script_path:
             return False
             
@@ -119,18 +118,17 @@ class ProcessManager:
                 finally:
                     del self.processes[script_type]
                     
-    def restart_script(self, script_type: str, script_name: str) -> bool:
+    def restart_script(self, script_type: str) -> bool:
         """Restart script with crash protection.
         
         Args:
             script_type: Type of script to restart
-            script_name: Name of script file
             
         Returns:
             bool: True if restart allowed and successful
         """
         current_time = time.time()
-        key = f"{script_type}:{script_name}"
+        key = script_type
         
         with self.lock:
             # Sliding window crash protection: only count crashes within time window
@@ -143,11 +141,11 @@ class ProcessManager:
             self.crash_timestamps[key].append(current_time)
             
             if len(self.crash_timestamps[key]) > self.restart_limits:
-                logger.warn(f"Script {script_name} crashed too many times. Giving up.")
+                logger.warn(f"Script {script_type} crashed too many times. Giving up.")
                 return False
                 
         time.sleep(2)
-        return self.start_script(script_type, script_name)
+        return self.start_script(script_type)
         
     def is_running(self, script_type: str) -> bool:
         """Check if script is running.

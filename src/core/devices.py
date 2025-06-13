@@ -113,9 +113,7 @@ class StreamDeckManager:
         
         working_dir = find_button_working_dir(self.config_dir, button_id)
         if working_dir:
-            button = Button(working_dir)
-            # Set callback for error state changes
-            button.on_error_changed = lambda bid=button_id: self.update_button_image(bid)
+            button = Button(working_dir, lambda bid=button_id: self.update_button_image(bid))
             self.buttons[button_id] = button
             if button.load_config():
                 button.start()
@@ -172,7 +170,7 @@ class StreamDeckManager:
                 logger.debug(f"Button {button_id:02d}: Normal image displayed")
             except Exception as e:
                 logger.error(f"Button {button_id:02d}: Error setting image on device: {e}")
-                button.set_error(f"Error setting image on device: {e}", notify=False)
+                button.failed = True
                 self._show_error_image(button_id)
         else:
             # Button has error or no image - show error image
@@ -251,9 +249,7 @@ class StreamDeckManager:
         for button_id in range(1, key_count + 1):
             working_dir = find_button_working_dir(self.config_dir, button_id)
             if working_dir:
-                button = Button(working_dir)
-                # Set callback for error state changes
-                button.on_error_changed = lambda bid=button_id: self.update_button_image(bid)
+                button = Button(working_dir, lambda bid=button_id: self.update_button_image(bid))
                 self.buttons[button_id] = button
             
     def _load_all_buttons(self):
