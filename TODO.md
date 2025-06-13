@@ -1,13 +1,12 @@
 ## Code
 - [x] Logging levels for debug/development/production
-- [ ] Support for multiple Stream Decks
 - [x] Test on connect/disconnect events, hot reload
 - [ ] CLI usage to control running daemon
 - [ ] CLI tools to verify config directory 
 - [ ] Plugin templates for basic usage
 - [ ] Configurable plugin architecture for templated plugins
 - [ ] Possibility to create docker installation/environment
-- [ ] Display error image on Stream Deck if plugin is failed to load
+- [x] Display error image on Stream Deck if plugin is failed to load
 - [ ] Verify before running a plugin, after it changed
 - [ ] More secure way to store credentials
 - [ ] Sandboxed execution of plugins, correct permissions to outside world
@@ -34,6 +33,7 @@
 - [ ] Memory leak detection
 
 ## Future
+- [ ] Support for multiple Stream Decks
 - [ ] Web interface for basic configuration
 - [ ] Long-press actions
 - [ ] Multiple pages / page switching

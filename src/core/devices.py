@@ -4,9 +4,7 @@ import os
 import time
 import threading
 from typing import Optional, Any
-from PIL import Image
 from StreamDeck.DeviceManager import DeviceManager as SDKDeviceManager
-from StreamDeck.ImageHelpers import PILHelper
 import pyudev
 
 from ..utils.debouncer import Debouncer
@@ -14,14 +12,13 @@ from .files import FileWatcher
 from .button import Button
 from ..utils.config import ConfigManager
 from ..utils.file_utils import *
+from ..utils.image_utils import load_blank_image, load_error_image, load_and_prepare_image, prepare_image_for_deck
 from ..utils import logger
 
 
 class StreamDeckManager:
     """Main Stream Deck manager."""
     
-    # Static blank image cache
-    _blank_image: Optional[Image.Image] = None
     
     def __init__(self, config_dir: str):
         """Initialize Stream Deck manager.
@@ -117,10 +114,15 @@ class StreamDeckManager:
         working_dir = find_button_working_dir(self.config_dir, button_id)
         if working_dir:
             button = Button(working_dir)
+            # Set callback for error state changes
+            button.on_error_changed = lambda bid=button_id: self.update_button_image(bid)
             self.buttons[button_id] = button
             if button.load_config():
                 button.start()
                 self.update_button_image(button_id)
+            else:
+                # load_config failed, show error image
+                self._show_error_image(button_id)
             logger.debug(f"Button {button_id:02d} reloaded")
         else:
             self.clear_buttons(button_id)
@@ -158,40 +160,37 @@ class StreamDeckManager:
             return
             
         button = self.buttons[button_id]
+        
+        # If button has error state, show error image
+        if button.has_error:
+            self._show_error_image(button_id)
+            return
+            
+        # Try to load normal image
         image_path = button._find_image_file()
         
         if not image_path:
+            # No image file found, show error
+            button.set_error(f"No image file found in {button.working_dir}", notify=False)
+            self._show_error_image(button_id)
             return
             
         try:
-            image = Image.open(image_path)
-            image_bytes = PILHelper.to_native_format(
-                self.deck,
-                PILHelper.create_scaled_image(self.deck, image)
-            )
-            
-            key_index = button_id - 1  # Convert to 0-based index
-            self.deck.set_key_image(key_index, image_bytes)
+            image_bytes = load_and_prepare_image(self.deck, image_path)
+            if image_bytes:
+                key_index = button_id - 1  # Convert to 0-based index
+                self.deck.set_key_image(key_index, image_bytes)
+                logger.debug(f"Button {button_id:02d}: Normal image displayed")
+            else:
+                # Image loading failed, show error
+                button.set_error(f"Failed to load image: {image_path}", notify=False)
+                self._show_error_image(button_id)
                         
         except Exception as e:
             logger.error(f"Button {button_id:02d}: Error updating image: {e}")
-            pass
+            button.set_error(f"Error loading image: {e}", notify=False)
+            self._show_error_image(button_id)
         
-    @classmethod
-    def _load_blank_image(cls) -> Optional[Image.Image]:
-        """Loads resources/blank.png once and caches it for clearing buttons efficiently."""
-        if cls._blank_image is None:
-            try:
-                # Navigate up from src/core/devices.py to find project root
-                # Using static caching to avoid reloading the same image on every clear operation
-                project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                blank_path = os.path.join(project_root, 'resources', 'blank.png')
-                cls._blank_image = Image.open(blank_path)
-                logger.debug(f"Blank image loaded: {blank_path}")
-            except Exception as e:
-                logger.error(f"Error loading blank image: {e}")
-                return None
-        return cls._blank_image
     
     def clear_buttons(self, button_id: Optional[int] = None):
         """Clear Stream Deck button(s).
@@ -202,15 +201,15 @@ class StreamDeckManager:
         if not self._is_device_connected():
             return
             
-        blank_image = self._load_blank_image()
+        blank_image = load_blank_image()
         if not blank_image:
             return
             
         try:
-            image_bytes = PILHelper.to_native_format(
-                self.deck, 
-                PILHelper.create_scaled_image(self.deck, blank_image)
-            )
+            from ..utils.image_utils import prepare_image_for_deck
+            image_bytes = prepare_image_for_deck(self.deck, blank_image)
+            if not image_bytes:
+                return
             
             if button_id is None:
                 key_count = self._get_key_count()
@@ -225,6 +224,30 @@ class StreamDeckManager:
                     
         except Exception as e:
             logger.error(f"Error clearing buttons: {e}")
+            pass
+    
+    def _show_error_image(self, button_id: int):
+        """Show error image on button.
+        
+        Args:
+            button_id: Button ID (1-based)
+        """
+        if not self._is_device_connected():
+            return
+            
+        error_image = load_error_image()
+        if not error_image:
+            return
+            
+        try:
+            image_bytes = prepare_image_for_deck(self.deck, error_image)
+            if image_bytes:
+                key_index = button_id - 1
+                self.deck.set_key_image(key_index, image_bytes)
+                logger.debug(f"Button {button_id:02d}: Error image displayed")
+                
+        except Exception as e:
+            logger.error(f"Button {button_id:02d}: Error showing error image: {e}")
             pass
         
             
@@ -242,6 +265,8 @@ class StreamDeckManager:
             working_dir = find_button_working_dir(self.config_dir, button_id)
             if working_dir:
                 button = Button(working_dir)
+                # Set callback for error state changes
+                button.on_error_changed = lambda bid=button_id: self.update_button_image(bid)
                 self.buttons[button_id] = button
             
     def _load_all_buttons(self):
@@ -250,7 +275,8 @@ class StreamDeckManager:
             if button.load_config():
                 self.update_button_image(button_id)
             else:
-                self.clear_buttons(button_id)
+                # load_config failed, error state is already set in Button.load_config()
+                self._show_error_image(button_id)
             
     def _smart_reload_affected_buttons(self, event_type: str, src_path: str, dest_path: str):
         """Smart reload only affected buttons.
@@ -308,6 +334,7 @@ class StreamDeckManager:
         file_path = event.data.get("path", "")
         event_type = event.data.get("event_type", "")
         
+        
         button_id = extract_button_id_from_path(file_path, self.config_dir, self._get_key_count())
         if not button_id or button_id not in self.buttons:
             return
@@ -316,13 +343,16 @@ class StreamDeckManager:
         
         if filename.startswith("image."):
             self.update_button_image(button_id)
-        elif event_type == "modified":
+        elif event_type in ["modified", "moved", "created", "closed"]:
             if filename.startswith("background."):
                 logger.debug(f"Button {button_id:02d}: Background script changed")
                 self.buttons[button_id].handle_script_change("background")
             elif filename.startswith("update."):
                 logger.debug(f"Button {button_id:02d}: Update script changed")
                 self.buttons[button_id].handle_script_change("update")
+            elif filename.startswith("action."):
+                logger.debug(f"Button {button_id:02d}: Action script changed")
+                self.buttons[button_id].handle_script_change("action")
         
         
     def _handle_button_directories_changed(self, event):

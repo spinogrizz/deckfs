@@ -163,6 +163,41 @@ class ProcessManager:
                 return False
             return self.processes[script_type].poll() is None
             
+    def wait_for_action_completion(self) -> Optional[int]:
+        """Wait for action script to complete and return exit code.
+        
+        Returns:
+            Optional[int]: Exit code or None if no action process
+        """
+        with self.lock:
+            if "action" not in self.processes:
+                return None
+                
+            process = self.processes["action"]
+            
+        try:
+            # Wait for process to complete with 10 second timeout
+            exit_code = process.wait(timeout=10)
+            return exit_code
+        except subprocess.TimeoutExpired:
+            # Action script is taking too long, kill it
+            logger.warning("Action script timeout, killing process")
+            try:
+                pgid = os.getpgid(process.pid)
+                os.killpg(pgid, signal.SIGTERM)
+                exit_code = process.wait(timeout=2)
+            except:
+                exit_code = -1  # Force kill failed
+            return exit_code
+        except Exception as e:
+            logger.error(f"Error waiting for action completion: {e}")
+            return None
+        finally:
+            # Clean up process from tracking
+            with self.lock:
+                if "action" in self.processes:
+                    del self.processes["action"]
+
     def get_exit_code(self, script_type: str) -> Optional[int]:
         """Get exit code of script if terminated.
         
@@ -175,7 +210,13 @@ class ProcessManager:
         with self.lock:
             if script_type not in self.processes:
                 return None
-            return self.processes[script_type].poll()
+            
+            process = self.processes[script_type]
+            exit_code = process.poll()
+            if exit_code is not None:
+                # Process terminated, remove from tracking
+                del self.processes[script_type]
+            return exit_code
             
     def cleanup(self):
         with self.lock:
@@ -242,16 +283,26 @@ class ProcessManager:
         
     def _execute_action(self, cmd: List[str], script_path: str) -> bool:
         """Execute action script - run once and exit."""
-        # Fire-and-forget: action scripts handle immediate button responses
         env = os.environ.copy()
         env.update(self._load_env_vars())
-        subprocess.Popen(
-            cmd + [script_path], 
-            cwd=self.working_dir, 
-            env=env,
-            preexec_fn=os.setsid  # Create new session for child isolation
-        )
-        return True
+        
+        # Execute action script synchronously with timeout to catch exit code
+        try:
+            process = subprocess.Popen(
+                cmd + [script_path], 
+                cwd=self.working_dir, 
+                env=env,
+                preexec_fn=os.setsid  # Create new session for child isolation
+            )
+            
+            with self.lock:
+                self.processes["action"] = process
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error starting action script: {e}")
+            return False
         
     def _execute_update(self, cmd: List[str], script_path: str) -> bool:
         """Execute update script - run synchronously."""
