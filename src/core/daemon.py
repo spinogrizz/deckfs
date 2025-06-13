@@ -26,14 +26,11 @@ class StreamDeckDaemon:
         
         # Initialize Stream Deck manager
         self.manager = StreamDeckManager(self.config_dir)
-        if not self.manager.initialize():
-            raise RuntimeError("Failed to initialize Stream Deck")
-            
-        # Start all buttons
-        self.manager.start()
+        self.manager.initialize()
         
         self.running = True
         print(f"Daemon started. Monitoring directory: {self.config_dir}")
+        print("Daemon will automatically connect when Stream Deck is available")
         print("Press Ctrl+C to exit")
         
     def stop(self):

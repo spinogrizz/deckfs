@@ -98,12 +98,15 @@ class TestProcessManager(unittest.TestCase):
         # Verify Popen was called
         mock_popen.assert_called_once()
         
+    @patch('os.getpgid')
     @patch('subprocess.Popen')
-    def test_execute_background_script(self, mock_popen):
+    def test_execute_background_script(self, mock_popen, mock_getpgid):
         """Test background script execution."""
         # Setup mock process
         mock_process = Mock()
+        mock_process.pid = 12345
         mock_popen.return_value = mock_process
+        mock_getpgid.return_value = 12345
         
         # Create test script
         self._create_test_script("background.py", "while True: time.sleep(1)")
@@ -164,13 +167,17 @@ class TestProcessManager(unittest.TestCase):
         self.assertEqual(exit_code, 42)
         
         
+    @patch('os.killpg')
+    @patch('os.getpgid')
     @patch('subprocess.Popen')
-    def test_stop_script(self, mock_popen):
+    def test_stop_script(self, mock_popen, mock_getpgid, mock_killpg):
         """Test stopping a running script."""
         # Setup mock process
         mock_process = Mock()
+        mock_process.pid = 12345
         mock_process.poll.return_value = None  # Running
         mock_popen.return_value = mock_process
+        mock_getpgid.return_value = 12345
         
         # Start background script
         self._create_test_script("background.py", "import time; time.sleep(10)")
@@ -179,21 +186,25 @@ class TestProcessManager(unittest.TestCase):
         # Stop the script
         self.process_manager.stop_script("background")
         
-        # Verify process was terminated
-        mock_process.terminate.assert_called_once()
-        mock_process.wait.assert_called_once()
+        # Verify process group was killed
+        mock_killpg.assert_called()
+        mock_process.wait.assert_called()
         
         # Verify process was removed from tracking
         self.assertNotIn("background", self.process_manager.processes)
         
+    @patch('os.killpg')
+    @patch('os.getpgid')
     @patch('subprocess.Popen')
-    def test_stop_script_force_kill(self, mock_popen):
+    def test_stop_script_force_kill(self, mock_popen, mock_getpgid, mock_killpg):
         """Test force killing script that doesn't terminate gracefully."""
         # Setup mock process that doesn't terminate gracefully
         mock_process = Mock()
+        mock_process.pid = 12345
         mock_process.poll.return_value = None
         mock_process.wait.side_effect = subprocess.TimeoutExpired("test", 5)
         mock_popen.return_value = mock_process
+        mock_getpgid.return_value = 12345
         
         # Start background script
         self._create_test_script("background.py", "import time; time.sleep(10)")
@@ -202,9 +213,9 @@ class TestProcessManager(unittest.TestCase):
         # Stop the script
         self.process_manager.stop_script("background")
         
-        # Verify terminate was called, then kill
-        mock_process.terminate.assert_called_once()
-        mock_process.kill.assert_called_once()
+        # Verify process group operations were called
+        mock_killpg.assert_called()
+        mock_process.wait.assert_called()
         
     @patch('time.time')
     @patch('time.sleep')
@@ -262,13 +273,16 @@ class TestProcessManager(unittest.TestCase):
             success = self.process_manager.start_script("action", "action")
             self.assertFalse(success)
             
+    @patch('os.getpgid')
     @patch('subprocess.Popen')
-    def test_background_script_already_running(self, mock_popen):
+    def test_background_script_already_running(self, mock_popen, mock_getpgid):
         """Test starting background script when already running."""
         # Setup mock process
         mock_process = Mock()
+        mock_process.pid = 12345
         mock_process.poll.return_value = None  # Still running
         mock_popen.return_value = mock_process
+        mock_getpgid.return_value = 12345
         
         # Create and start background script
         self._create_test_script("background.py", "import time; time.sleep(10)")

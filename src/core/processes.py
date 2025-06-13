@@ -4,6 +4,7 @@ import subprocess
 import threading
 import time
 import os
+import signal
 from typing import Dict, Optional, List
 from collections import defaultdict
 
@@ -73,7 +74,7 @@ class ProcessManager:
             return False
             
     def stop_script(self, script_type: str):
-        """Stop script of given type.
+        """Stop script of given type and all child processes.
         
         Args:
             script_type: Type of script to stop
@@ -83,14 +84,35 @@ class ProcessManager:
                 process = self.processes[script_type]
                 try:
                     if process.poll() is None:  # Still running
-                        # Graceful shutdown: try SIGTERM first, then SIGKILL if unresponsive
-                        # 5-second timeout allows scripts to clean up before forced termination
-                        process.terminate()
                         try:
-                            process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                            process.wait()
+                            pgid = os.getpgid(process.pid)
+                            print(f"Stopping {script_type} script (PID: {process.pid}, PGID: {pgid})")
+                            
+                            # Kill entire process group to catch child processes
+                            try:
+                                # First try SIGTERM to entire process group
+                                os.killpg(pgid, signal.SIGTERM)
+                                try:
+                                    process.wait(timeout=5)
+                                except subprocess.TimeoutExpired:
+                                    # Force kill if processes don't terminate gracefully
+                                    print(f"Force killing process group {pgid}")
+                                    os.killpg(pgid, signal.SIGKILL)
+                                    process.wait()
+                            except ProcessLookupError:
+                                # Process group already terminated
+                                pass
+                                
+                        except OSError as e:
+                            # Fallback to single process termination if process group operations fail
+                            print(f"Process group termination failed: {e}, falling back to single process")
+                            process.terminate()
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait()
+                                
                 except Exception as e:
                     print(f"Error stopping {script_type} script: {e}")
                 finally:
@@ -222,7 +244,12 @@ class ProcessManager:
         # Fire-and-forget: action scripts handle immediate button responses
         env = os.environ.copy()
         env.update(self._load_env_vars())
-        subprocess.Popen(cmd + [script_path], cwd=self.working_dir, env=env)
+        subprocess.Popen(
+            cmd + [script_path], 
+            cwd=self.working_dir, 
+            env=env,
+            preexec_fn=os.setsid  # Create new session for child isolation
+        )
         return True
         
     def _execute_update(self, cmd: List[str], script_path: str) -> bool:
@@ -247,13 +274,21 @@ class ProcessManager:
         with self.lock:
             env = os.environ.copy()
             env.update(self._load_env_vars())
+            
+            # Create new process group to isolate child processes
             process = subprocess.Popen(
                 cmd + [script_path],
                 cwd=self.working_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env
+                env=env,
+                preexec_fn=os.setsid  # Create new session and process group
             )
             self.processes["background"] = process
+            try:
+                pgid = os.getpgid(process.pid)
+                print(f"Started background script (PID: {process.pid}, PGID: {pgid})")
+            except OSError:
+                print(f"Started background script (PID: {process.pid})")
         return True

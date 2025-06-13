@@ -1,15 +1,19 @@
 """Main Stream Deck manager with new architecture."""
 
 import os
-from typing import Dict, Optional, Any
+import time
+import threading
+from typing import Optional, Any
 from PIL import Image
 from StreamDeck.DeviceManager import DeviceManager as SDKDeviceManager
 from StreamDeck.ImageHelpers import PILHelper
+import pyudev
 
 from ..utils.debouncer import Debouncer
 from .files import FileWatcher
 from .button import Button
 from ..utils.config import ConfigManager
+from ..utils.file_utils import *
 
 
 class StreamDeckManager:
@@ -26,50 +30,68 @@ class StreamDeckManager:
         """
         self.config_dir = config_dir
         self.deck = None
-        self.key_count = 0
+        self.shutdown_requested = False
         
-        # Configuration manager
+        self.device_monitor_thread = None
+        self.device_monitor_lock = threading.Lock()
+        self.device_monitor_event = threading.Event()
+        self.udev_monitor = None
+        self.udev_observer = None
+        
         self.config_manager = ConfigManager(config_dir)
         
-        # Core components
         debounce_interval = self.config_manager.get_debounce_interval()
         self.debouncer = Debouncer(debounce_interval=debounce_interval)
         self.file_watcher = FileWatcher(self.debouncer, config_dir)
         self.buttons: Dict[int, Button] = {}
         
-        # Subscribe to file change events
         self.debouncer.subscribe("FILE_CHANGED", self._handle_file_change)
         
-        # Subscribe to button directory changes
         self.debouncer.subscribe("BUTTON_DIRECTORIES_CHANGED", self._handle_button_directories_changed)
         
-        # Subscribe to config changes
         self.debouncer.subscribe("CONFIG_CHANGED", self._handle_config_change)
         
     def initialize(self) -> bool:
-        """Initialize Stream Deck device and components.
+        """Called once at daemon startup to begin device monitoring and file watching.
         
         Returns:
             bool: True if initialization successful
         """
-        if not self._initialize_device():
-            return False
-            
-        self._create_buttons()
-        
-        self._load_all_buttons()
+        self._start_device_monitoring()
         
         self.file_watcher.start_watching()
         
-        print(f"Stream Deck manager initialized with {len(self.buttons)} buttons")
+        print("Stream Deck manager initialized with device monitoring")
         return True
         
+    def _get_key_count(self) -> int:
+        """Returns device key count or 0 if no device connected.
+        
+        Safer than calling deck.key_count() directly since device may be None.
+        """
+        if not self.deck:
+            return 0
+        try:
+            return self.deck.key_count()
+        except Exception:
+            return 0
+        
     def start(self):
+        """Called after device connection to start all configured buttons."""
         for button in self.buttons.values():
             button.start()
         print("All buttons started")
         
     def stop(self):
+        """Called at daemon shutdown to cleanup all resources and threads."""
+        self.shutdown_requested = True
+        
+        self._stop_udev_monitoring()
+        
+        self.device_monitor_event.set()
+        if self.device_monitor_thread and self.device_monitor_thread.is_alive():
+            self.device_monitor_thread.join(timeout=2.0)
+        
         for button in self.buttons.values():
             button.stop()
             
@@ -77,9 +99,7 @@ class StreamDeckManager:
         
         self.debouncer.shutdown()
         
-        if self.deck:
-            self.deck.close()
-            self.deck = None
+        self._disconnect_device()
             
         print("Stream Deck manager stopped")
         
@@ -93,8 +113,7 @@ class StreamDeckManager:
             self.buttons[button_id].stop()
             del self.buttons[button_id]
         
-        # Create new button
-        working_dir = self._find_button_working_dir(button_id)
+        working_dir = find_button_working_dir(self.config_dir, button_id)
         if working_dir:
             button = Button(working_dir)
             self.buttons[button_id] = button
@@ -107,7 +126,7 @@ class StreamDeckManager:
             print(f"Button {button_id:02d} removed")
             
     def reload_all(self):
-        """Reload all buttons."""
+        """Called when button directories are renamed/moved to recreate all buttons."""
         print("Reloading all buttons...")
         
         for button in self.buttons.values():
@@ -117,7 +136,6 @@ class StreamDeckManager:
         old_buttons = self.buttons
         self._create_buttons()
         
-        # Clean up old buttons
         for button_id, old_button in old_buttons.items():
             old_button.stop()
                 
@@ -132,19 +150,16 @@ class StreamDeckManager:
         Args:
             button_id: Button ID (1-based)
         """
-        if not self.deck:
-            print(f"Button {button_id:02d}: No deck available")
+        if not self._is_device_connected():
             return
             
         if button_id not in self.buttons:
-            print(f"Button {button_id:02d}: Button not found")
             return
             
         button = self.buttons[button_id]
         image_path = button._find_image_file()
         
         if not image_path:
-            print(f"Button {button_id:02d}: No image file found")
             return
             
         try:
@@ -159,10 +174,11 @@ class StreamDeckManager:
                         
         except Exception as e:
             print(f"Button {button_id:02d}: Error updating image: {e}")
+            pass
         
     @classmethod
     def _load_blank_image(cls) -> Optional[Image.Image]:
-        """Load blank image once and cache it."""
+        """Loads resources/blank.png once and caches it for clearing buttons efficiently."""
         if cls._blank_image is None:
             try:
                 # Navigate up from src/core/devices.py to find project root
@@ -182,7 +198,7 @@ class StreamDeckManager:
         Args:
             button_id: Button ID to clear (1-based), or None to clear all
         """
-        if not self.deck:
+        if not self._is_device_connected():
             return
             
         blank_image = self._load_blank_image()
@@ -196,63 +212,39 @@ class StreamDeckManager:
             )
             
             if button_id is None:
-                for key_index in range(self.key_count):
+                key_count = self._get_key_count()
+                for key_index in range(key_count):
                     self.deck.set_key_image(key_index, image_bytes)
-                print(f"All {self.key_count} buttons cleared")
+                print(f"All {key_count} buttons cleared")
             else:
-                if 1 <= button_id <= self.key_count:
+                if 1 <= button_id <= self._get_key_count():
                     key_index = button_id - 1
                     self.deck.set_key_image(key_index, image_bytes)
                     print(f"Button {button_id:02d} cleared")
                     
         except Exception as e:
             print(f"Error clearing buttons: {e}")
+            pass
         
-    def _initialize_device(self) -> bool:
-        """Initialize Stream Deck device.
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            devices = SDKDeviceManager().enumerate()
-            if not devices:
-                print("Stream Deck device not found")
-                return False
-                
-            self.deck = devices[0]
-            self.deck.open()
-            self.deck.reset()
-            
-            # Apply initial configuration settings
-            self.config_manager.apply_all_settings(self.deck, self.debouncer)
-            
-            self.key_count = self.deck.key_count()
-            print(f"Found device: {self.deck.deck_type()} with {self.key_count} buttons")
-            
-            # Set button callback
-            self.deck.set_key_callback(self._device_key_callback)
-            
-            return True
-            
-        except Exception as e:
-            print(f"Stream Deck initialization error: {e}")
-            return False
             
     def _create_buttons(self):
-        """Create button instances."""
+        """Scans config directory for button folders and creates Button instances."""
         for button in self.buttons.values():
             button.stop()
         self.buttons.clear()
         
-        for button_id in range(1, self.key_count + 1):
-            working_dir = self._find_button_working_dir(button_id)
+        key_count = self._get_key_count()
+        if key_count == 0:
+            return
+        
+        for button_id in range(1, key_count + 1):
+            working_dir = find_button_working_dir(self.config_dir, button_id)
             if working_dir:
                 button = Button(working_dir)
                 self.buttons[button_id] = button
             
     def _load_all_buttons(self):
-        """Load configuration for all buttons."""
+        """Executes update scripts and loads images for all buttons after device connection."""
         for button_id, button in self.buttons.items():
             if button.load_config():
                 self.update_button_image(button_id)
@@ -269,11 +261,9 @@ class StreamDeckManager:
         """
         affected_buttons = set()
         
-        # Find which buttons are affected
         if event_type == "moved":
-            # Both source and destination affected because move = delete + create
-            src_button_id = self._extract_button_id_from_path(src_path)
-            dest_button_id = self._extract_button_id_from_path(dest_path)
+            src_button_id = extract_button_id_from_path(src_path, self.config_dir, self._get_key_count())
+            dest_button_id = extract_button_id_from_path(dest_path, self.config_dir, self._get_key_count())
             
             if src_button_id:
                 affected_buttons.add(src_button_id)
@@ -281,89 +271,16 @@ class StreamDeckManager:
                 affected_buttons.add(dest_button_id)
                 
         elif event_type in ["created", "deleted", "modified"]:
-            # For create/delete/modified, only one button is affected
-            button_id = self._extract_button_id_from_path(src_path)
+            button_id = extract_button_id_from_path(src_path, self.config_dir, self._get_key_count())
             if button_id:
                 affected_buttons.add(button_id)
         
         print(f"Reloading affected buttons: {sorted(affected_buttons)}")
         
-        # Reload only affected buttons
         for button_id in affected_buttons:
             print(f"Reloading button {button_id:02d}")
             self.reload_button(button_id)
                 
-    def _extract_button_id_from_path(self, file_path: str) -> int:
-        """Extract button ID from file or directory path.
-        
-        Args:
-            file_path: File or directory path
-            
-        Returns:
-            int: Button ID (1-based) or 0 if not found
-        """
-        try:
-            # Handle files that may not exist yet during filesystem events
-            # Check for '.' in basename as workaround for non-existent files
-            if os.path.isfile(file_path) or '.' in os.path.basename(file_path):
-                dir_path = os.path.dirname(file_path)
-            else:
-                dir_path = file_path
-                
-            # Get directory name relative to config_dir
-            rel_path = os.path.relpath(dir_path, self.config_dir)
-            dir_name = rel_path.split(os.sep)[0]  # Get first part of relative path
-            
-            # Extract first two digits
-            if len(dir_name) >= 2 and dir_name[:2].isdigit():
-                button_id = int(dir_name[:2])
-                # Validate button ID is within device range
-                if 1 <= button_id <= self.key_count:
-                    return button_id
-        except Exception as e:
-            print(f"Error extracting button ID from {file_path}: {e}")
-            
-        return 0
-        
-    def _find_button_directories(self) -> Dict[int, str]:
-        """Find all button directories.
-        
-        Returns:
-            Dict[int, str]: Mapping of button ID to directory name
-        """
-        button_dirs = {}
-        
-        if not os.path.isdir(self.config_dir):
-            return button_dirs
-            
-        for item in os.listdir(self.config_dir):
-            item_path = os.path.join(self.config_dir, item)
-            if os.path.isdir(item_path) and len(item) >= 2 and item[:2].isdigit():
-                button_id = int(item[:2])
-                if 1 <= button_id <= self.key_count:
-                    button_dirs[button_id] = item
-                    
-        return button_dirs
-    
-    def _find_button_working_dir(self, button_id: int) -> Optional[str]:
-        """Find working directory for button.
-        
-        Args:
-            button_id: Button ID (1-based)
-            
-        Returns:
-            Optional[str]: Full path to button working directory or None
-        """
-        if not os.path.isdir(self.config_dir):
-            return None
-            
-        button_prefix = f"{button_id:02d}"
-        
-        for item in os.listdir(self.config_dir):
-            if item.startswith(button_prefix) and os.path.isdir(os.path.join(self.config_dir, item)):
-                return os.path.join(self.config_dir, item)
-                
-        return None
         
     def _device_key_callback(self, deck, key, state):
         """Handle physical button press from device.
@@ -378,21 +295,19 @@ class StreamDeckManager:
             
         button_id = key + 1  # Convert to 1-based
         
-        # Handle button press directly
         if button_id in self.buttons:
             print(f"Button {button_id:02d}: Pressed")
             self.buttons[button_id].handle_press()
     
     def _handle_file_change(self, event):
-        """Handle file change event.
+        """Called by FileWatcher when image or script files change.
         
-        Args:
-            event: File change event
+        Triggers button image updates or script restarts for affected buttons.
         """
         file_path = event.data.get("path", "")
         event_type = event.data.get("event_type", "")
         
-        button_id = self._extract_button_id_from_path(file_path)
+        button_id = extract_button_id_from_path(file_path, self.config_dir, self._get_key_count())
         if not button_id or button_id not in self.buttons:
             return
             
@@ -410,10 +325,9 @@ class StreamDeckManager:
         
         
     def _handle_button_directories_changed(self, event):
-        """Handle button directory changes (rename/create/delete).
+        """Called by FileWatcher when button directories are created/deleted/renamed.
         
-        Args:
-            event: Button directory change event
+        Stops file watching during reload to prevent infinite loops.
         """
         event_type = event.data.get('event_type')
         src_path = event.data.get('src_path')
@@ -432,10 +346,203 @@ class StreamDeckManager:
             self.file_watcher.start_watching()
     
     def _handle_config_change(self, event):
-        """Handle config.yaml file change event.
-        
-        Args:
-            event: Config change event
-        """
+        """Called by FileWatcher when config.yaml changes to reload brightness/debounce settings."""
         print("Config file changed, reloading configuration...")
         self.config_manager.reload_config(self.deck, self.debouncer)
+        
+    def _start_device_monitoring(self):
+        """Called during initialization to start background thread for USB monitoring."""
+        if self.device_monitor_thread is None or not self.device_monitor_thread.is_alive():
+            self._start_udev_monitoring()
+            self.device_monitor_thread = threading.Thread(
+                target=self._device_monitor_loop,
+                daemon=True,
+                name="DeviceMonitor"
+            )
+            self.device_monitor_thread.start()
+            
+    def _device_monitor_loop(self):
+        """Background thread that handles USB events and periodic health checks.
+        
+        Runs until shutdown_requested is True. Triggered by USB events or 10-second timeout.
+        """
+        print("Device monitoring started")
+        
+        with self.device_monitor_lock:
+            if not self._is_device_connected():
+                self._try_connect_device()
+        
+        health_check_interval = 10.0  # Check health every 10 seconds
+        
+        while not self.shutdown_requested:
+            event_triggered = self.device_monitor_event.wait(timeout=health_check_interval)
+            
+            if self.shutdown_requested:
+                break
+                
+            with self.device_monitor_lock:
+                if event_triggered:
+                    self.device_monitor_event.clear()
+                    
+                    if self.deck and not self._is_device_connected():
+                        print("Device disconnected (detected via USB event)")
+                        self._handle_device_disconnection()
+                
+                elif self.deck and not self._is_device_connected():
+                    print("Device connection lost (periodic health check)")
+                    self._handle_device_disconnection()
+                
+                # Always try to reconnect if no device connected (handles sleep/wake scenarios)
+                if not self._is_device_connected():
+                    print("Attempting to reconnect device...")
+                    if self._try_connect_device():
+                        print("Device reconnected successfully!")
+                    else:
+                        print("Device reconnection failed, will retry in 10 seconds")
+                
+        print("Device monitoring stopped")
+        
+    def _try_connect_device(self) -> bool:
+        """Attempts to find and connect to first available Stream Deck device.
+        
+        Called periodically by monitor thread until connection succeeds.
+        Closes any existing connection before opening new one.
+        """
+        try:
+            devices = SDKDeviceManager().enumerate()
+            if not devices:
+                return False
+                
+            device = devices[0]
+            
+            # Close existing connection if any before opening new one
+            if self.deck:
+                try:
+                    self.deck.close()
+                except Exception:
+                    pass
+                    
+            device.open()
+            device.reset()
+            
+            self.deck = device
+            
+            self.config_manager.apply_all_settings(self.deck, self.debouncer)
+            
+            self.deck.set_key_callback(self._device_key_callback)
+            
+            device_info = f"{device.deck_type()} (serial: {device.get_serial_number()})"
+            print(f"Connected to {device_info} with {self._get_key_count()} buttons")
+            
+            self._on_device_connected()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Failed to connect to device: {e}")
+            return False
+            
+    def _is_device_connected(self) -> bool:
+        """Returns True if device is physically connected and SDK session is open.
+        
+        Used by health checks and connection logic to determine device state.
+        """
+        if not self.deck:
+            return False
+            
+        try:
+            connected = self.deck.connected()
+            is_open = self.deck.is_open()
+            return connected and is_open
+        except Exception as e:
+            print(f"Device health check failed: {e}")
+            return False
+            
+    def _handle_device_disconnection(self):
+        """Called when device health check fails to cleanup buttons and processes."""
+        self._disconnect_device()
+        
+        print(f"Stopping {len(self.buttons)} buttons due to device disconnection...")
+        for button_id, button in self.buttons.items():
+            print(f"Stopping button {button_id:02d}")
+            button.stop()  # This calls ProcessManager.cleanup()
+        self.buttons.clear()
+        print("All buttons stopped and cleaned up")
+        
+    def _disconnect_device(self):
+        """Closes SDK connection and sets deck to None. Safe to call multiple times."""
+        if self.deck:
+            try:
+                self.deck.close()
+            except Exception as e:
+                print(f"Error closing device: {e}")
+            finally:
+                self.deck = None
+                
+    def _on_device_connected(self):
+        """Called after successful device connection to initialize buttons and apply config."""
+        if self.buttons:
+            print("Warning: buttons exist during reconnection, cleaning up...")
+            for button in self.buttons.values():
+                button.stop()
+            self.buttons.clear()
+            
+        self._create_buttons()
+        self._load_all_buttons()
+        self.start()
+        print(f"Device ready with {len(self.buttons)} buttons")
+        
+    def _start_udev_monitoring(self):
+        """Sets up pyudev USB monitoring to detect Stream Deck connect/disconnect events."""
+        try:
+            context = pyudev.Context()
+            self.udev_monitor = pyudev.Monitor.from_netlink(context)
+            self.udev_monitor.filter_by(subsystem='usb')
+            
+            self.udev_observer = pyudev.MonitorObserver(
+                self.udev_monitor,
+                callback=self._on_usb_event,
+                name='USBMonitor'
+            )
+            self.udev_observer.daemon = True
+            self.udev_observer.start()
+            
+            print("USB device monitoring started")
+            
+        except Exception as e:
+            print(f"Failed to start USB monitoring: {e}")
+            
+    def _stop_udev_monitoring(self):
+        """Called during shutdown to stop pyudev observer thread."""
+        try:
+            if self.udev_observer:
+                self.udev_observer.stop()
+                self.udev_observer = None
+            if self.udev_monitor:
+                self.udev_monitor = None
+        except Exception as e:
+            print(f"Error stopping USB monitoring: {e}")
+            
+    def _on_usb_event(self, device):
+        """Called by pyudev when USB devices are added/removed.
+        
+        Signals device monitor thread to check for Stream Deck reconnection.
+        """
+        try:
+            action = device.action
+            if action in ('add', 'remove'):
+                vendor_id = device.get('ID_VENDOR_ID', '').lower()
+                product_id = device.get('ID_MODEL_ID', '').lower()
+                
+                is_potential_streamdeck = (vendor_id == '0fd9' or 
+                                         'stream' in device.get('ID_MODEL', '').lower() or
+                                         action == 'add')
+                
+                if is_potential_streamdeck:
+                    print(f"USB device {action}: {device.get('DEVNAME', 'unknown')} "
+                          f"(vendor: {vendor_id}, model: {product_id})")
+                    
+                    self.device_monitor_event.set()
+                    
+        except Exception as e:
+            print(f"Error processing USB event: {e}")
