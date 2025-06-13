@@ -26,7 +26,7 @@ class Button:
         self.running = False
         
     def load_config(self) -> bool:
-        """Load button configuration.
+        """Called by StreamDeckManager after button creation to run update script.
         
         Returns:
             bool: True if configuration loaded successfully
@@ -39,7 +39,7 @@ class Button:
         return True
         
     def reload(self):
-        """Reload button configuration."""
+        """Called when button files change to recreate ProcessManager and restart scripts."""
         self.stop()
         
         self.process_manager = ProcessManager(self.working_dir)
@@ -48,6 +48,7 @@ class Button:
         self.start()
         
     def start(self):
+        """Called after device connection to start background script and monitoring thread."""
         if self.running:
             return
             
@@ -62,6 +63,7 @@ class Button:
         self.monitor_thread.start()
         
     def stop(self):
+        """Called during shutdown or disconnection to cleanup all processes and threads."""
         if not self.running:
             return
             
@@ -73,19 +75,16 @@ class Button:
             self.monitor_thread.join(timeout=2)
         
     def handle_press(self):
+        """Called by StreamDeckManager when physical button is pressed to execute action script."""
         self.process_manager.start_script("action", "action")
         
         
     def _find_image_file(self) -> Optional[str]:
-        """Find image file for button.
-        
-        Returns:
-            Optional[str]: Path to image file or None
-        """
+        """Called by StreamDeckManager to locate image.* file for display on device."""
         return find_any_file(self.working_dir, "image")
     
     def handle_script_change(self, script_type: str):
-        """Handle script file change.
+        """Called by FileWatcher when script files are modified to restart affected scripts.
         
         Args:
             script_type: Type of script that changed (background, update, action)
@@ -97,7 +96,10 @@ class Button:
             self.process_manager.start_script("update", "update")
                 
     def _monitor_background(self):
-        """Monitor background process for crashes."""
+        """Background thread that checks every second for crashed background scripts.
+        
+        Automatically restarts crashed scripts with crash protection limits.
+        """
         while self.running:
             if self.process_manager.is_running("background"):
                 exit_code = self.process_manager.get_exit_code("background")

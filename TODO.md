@@ -1,7 +1,7 @@
 ## Code
 - [ ] Logging levels for debug/development/production
 - [ ] Support for multiple Stream Decks
-- [ ] Test on connect/disconnect events, hot reload
+- [x] Test on connect/disconnect events, hot reload
 - [ ] CLI usage to control running daemon
 - [ ] CLI tools to verify config directory 
 - [ ] Plugin templates for basic usage

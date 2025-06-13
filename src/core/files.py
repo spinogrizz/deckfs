@@ -8,7 +8,10 @@ from ..utils.debouncer import Debouncer
 
 
 class FileWatcher(FileSystemEventHandler):
-    """File system watcher with debouncing."""
+    """Watches config directory for changes and emits debounced events to StreamDeckManager.
+    
+    Uses watchdog to monitor button directories, scripts, images, and config files.
+    """
     
     def __init__(self, debouncer: Debouncer, config_dir: str):
         """Initialize file watcher.
@@ -150,13 +153,9 @@ class FileWatcher(FileSystemEventHandler):
             return False
             
     def _get_debounce_key(self, file_path: str) -> str:
-        """Generate debounce key for file path.
+        """Groups related files under same debounce key to prevent rapid-fire events.
         
-        Args:
-            file_path: Path to file
-            
-        Returns:
-            str: Debounce key
+        Button files use button-specific keys, config files use global keys.
         """
         try:
             # Check if file_path is valid
