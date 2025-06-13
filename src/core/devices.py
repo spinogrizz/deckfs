@@ -12,7 +12,7 @@ from .files import FileWatcher
 from .button import Button
 from ..utils.config import ConfigManager
 from ..utils.file_utils import *
-from ..utils.image_utils import load_blank_image, load_error_image, load_and_prepare_image, prepare_image_for_deck
+from ..utils.image_utils import load_blank_image, load_error_image, prepare_image_for_deck
 from ..utils import logger
 
 
@@ -161,34 +161,21 @@ class StreamDeckManager:
             
         button = self.buttons[button_id]
         
-        # If button has error state, show error image
-        if button.has_error:
-            self._show_error_image(button_id)
-            return
-            
-        # Try to load normal image
-        image_path = button._find_image_file()
+        # Ask button for its image bytes
+        image_bytes = button.get_image_bytes(self.deck)
         
-        if not image_path:
-            # No image file found, show error
-            button.set_error(f"No image file found in {button.working_dir}", notify=False)
-            self._show_error_image(button_id)
-            return
-            
-        try:
-            image_bytes = load_and_prepare_image(self.deck, image_path)
-            if image_bytes:
+        if image_bytes:
+            # Normal image - display it
+            try:
                 key_index = button_id - 1  # Convert to 0-based index
                 self.deck.set_key_image(key_index, image_bytes)
                 logger.debug(f"Button {button_id:02d}: Normal image displayed")
-            else:
-                # Image loading failed, show error
-                button.set_error(f"Failed to load image: {image_path}", notify=False)
+            except Exception as e:
+                logger.error(f"Button {button_id:02d}: Error setting image on device: {e}")
+                button.set_error(f"Error setting image on device: {e}", notify=False)
                 self._show_error_image(button_id)
-                        
-        except Exception as e:
-            logger.error(f"Button {button_id:02d}: Error updating image: {e}")
-            button.set_error(f"Error loading image: {e}", notify=False)
+        else:
+            # Button has error or no image - show error image
             self._show_error_image(button_id)
         
     
@@ -329,11 +316,14 @@ class StreamDeckManager:
     def _handle_file_change(self, event):
         """Called by FileWatcher when image or script files change.
         
-        Triggers button image updates or script restarts for affected buttons.
+        Simply tells the button that a file changed, button decides what to do.
         """
         file_path = event.data.get("path", "")
         event_type = event.data.get("event_type", "")
         
+        # Only handle relevant event types at the device level
+        if event_type not in ["modified", "moved", "created", "closed"]:
+            return
         
         button_id = extract_button_id_from_path(file_path, self.config_dir, self._get_key_count())
         if not button_id or button_id not in self.buttons:
@@ -341,18 +331,12 @@ class StreamDeckManager:
             
         filename = os.path.basename(file_path)
         
-        if filename.startswith("image."):
+        # Button decides what to do with the changed file
+        file_handled = self.buttons[button_id].file_changed(filename)
+        
+        # If button says it was an image file, update display
+        if file_handled and filename.startswith("image."):
             self.update_button_image(button_id)
-        elif event_type in ["modified", "moved", "created", "closed"]:
-            if filename.startswith("background."):
-                logger.debug(f"Button {button_id:02d}: Background script changed")
-                self.buttons[button_id].handle_script_change("background")
-            elif filename.startswith("update."):
-                logger.debug(f"Button {button_id:02d}: Update script changed")
-                self.buttons[button_id].handle_script_change("update")
-            elif filename.startswith("action."):
-                logger.debug(f"Button {button_id:02d}: Action script changed")
-                self.buttons[button_id].handle_script_change("action")
         
         
     def _handle_button_directories_changed(self, event):

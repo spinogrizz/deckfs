@@ -171,50 +171,94 @@ class TestButton(unittest.TestCase):
         self.assertIsNotNone(found_path)
         self.assertTrue(found_path.endswith("image.png") or found_path.endswith("image.jpg"))
         
-    def test_handle_script_change_background(self):
+    def test_file_changed_background_script(self):
         """Test handling background script change."""
         with patch.object(self.button.process_manager, 'stop_script') as mock_stop, \
              patch.object(self.button.process_manager, 'start_script') as mock_start:
             
-            self.button.handle_script_change("background")
+            handled = self.button.file_changed("background.py")
             
+            self.assertTrue(handled)
             mock_stop.assert_called_once_with("background")
             mock_start.assert_called_once_with("background", "background")
             
-    def test_handle_script_change_update(self):
+    def test_file_changed_update_script(self):
         """Test handling update script change."""
         with patch.object(self.button.process_manager, 'start_script') as mock_start, \
              patch.object(self.button.process_manager, 'stop_script') as mock_stop:
             
-            self.button.handle_script_change("update")
+            handled = self.button.file_changed("update.sh")
             
+            self.assertTrue(handled)
             mock_start.assert_called_once_with("update", "update")
             mock_stop.assert_not_called()  # Update scripts are not stopped
             
-    def test_handle_script_change_action(self):
-        """Test handling action script change (should do nothing)."""
+    def test_file_changed_action_script(self):
+        """Test handling action script change (logs but does nothing else)."""
         with patch.object(self.button.process_manager, 'start_script') as mock_start, \
              patch.object(self.button.process_manager, 'stop_script') as mock_stop:
             
-            self.button.handle_script_change("action")
+            handled = self.button.file_changed("action.js")
             
+            self.assertTrue(handled)  # Recognized but no action taken
             # Action script changes don't trigger restart
             mock_start.assert_not_called()
             mock_stop.assert_not_called()
             
-    def test_handle_script_change_invalid_type(self):
-        """Test handling invalid script type change."""
-        with patch.object(self.button.process_manager, 'start_script') as mock_start, \
-             patch.object(self.button.process_manager, 'stop_script') as mock_stop:
+    def test_file_changed_image(self):
+        """Test handling image file changes."""
+        # Image changes should be recognized but no script actions taken
+        handled = self.button.file_changed("image.png")
+        self.assertTrue(handled)
+        
+        # Different image formats
+        handled = self.button.file_changed("image.jpg")
+        self.assertTrue(handled)
+        
+        handled = self.button.file_changed("image.gif")
+        self.assertTrue(handled)
+    
+    def test_file_changed_invalid_files(self):
+        """Test handling invalid file changes."""
+        # Test various invalid file names
+        invalid_files = ["config.yaml", "readme.txt", "some_file.log", ".hidden"]
+        for invalid_file in invalid_files:
+            handled = self.button.file_changed(invalid_file)
+            self.assertFalse(handled)  # Should not handle these files
+    
+    def test_get_image_bytes_error_state(self):
+        """Test get_image_bytes when button has error."""
+        self.button.set_error("Test error")
+        
+        # Mock deck object
+        mock_deck = unittest.mock.Mock()
+        
+        result = self.button.get_image_bytes(mock_deck)
+        self.assertIsNone(result)
+    
+    def test_get_image_bytes_no_image(self):
+        """Test get_image_bytes when no image file exists."""
+        mock_deck = unittest.mock.Mock()
+        
+        with patch.object(self.button, '_find_image_file', return_value=None):
+            result = self.button.get_image_bytes(mock_deck)
             
-            # Test various invalid script types
-            invalid_types = ["invalid", "", None, 123, [], {}]
-            for invalid_type in invalid_types:
-                self.button.handle_script_change(invalid_type)
-                
-            # Should not call any methods for invalid types
-            mock_start.assert_not_called()
-            mock_stop.assert_not_called()
+        self.assertIsNone(result)
+        self.assertTrue(self.button.has_error)
+        self.assertIn("No image file found", self.button.error_message)
+    
+    def test_get_image_bytes_success(self):
+        """Test successful get_image_bytes."""
+        mock_deck = unittest.mock.Mock()
+        mock_image_bytes = b"fake_image_data"
+        
+        with patch.object(self.button, '_find_image_file', return_value="/path/to/image.png"), \
+             patch('src.core.button.load_and_prepare_image', return_value=mock_image_bytes):
+            
+            result = self.button.get_image_bytes(mock_deck)
+            
+        self.assertEqual(result, mock_image_bytes)
+        self.assertFalse(self.button.has_error)
             
     def test_reload_button(self):
         """Test reloading button configuration."""
@@ -316,7 +360,8 @@ class TestButton(unittest.TestCase):
             self.assertIsNotNone(image_path)
             
             # 5. Handle script change
-            self.button.handle_script_change("background")
+            handled = self.button.file_changed("background.py")
+            self.assertTrue(handled)
             
             # 6. Stop button
             self.button.stop()

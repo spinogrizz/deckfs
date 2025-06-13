@@ -5,6 +5,7 @@ import threading
 from typing import Optional
 from .processes import ProcessManager
 from ..utils.file_utils import find_any_file
+from ..utils.image_utils import load_and_prepare_image
 from ..utils import logger
 
 
@@ -97,26 +98,79 @@ class Button:
         
         
     def _find_image_file(self) -> Optional[str]:
-        """Called by StreamDeckManager to locate image.* file for display on device."""
+        """Internal method to locate image.* file for display on device."""
         return find_any_file(self.working_dir, "image")
     
-    def handle_script_change(self, script_type: str):
-        """Called by FileWatcher when script files are modified to restart affected scripts.
+    def get_image_bytes(self, deck) -> Optional[bytes]:
+        """Get prepared image bytes for this button or None if error/no image.
         
         Args:
-            script_type: Type of script that changed (background, update, action)
+            deck: Stream Deck device instance for image preparation
+            
+        Returns:
+            Optional[bytes]: Prepared image bytes or None if error
         """
-        if script_type == "background":
+        if self.has_error:
+            # Error state - caller should show error image
+            return None
+            
+        image_path = self._find_image_file()
+        if not image_path:
+            # No image file found
+            self.set_error(f"No image file found in {self.working_dir}", notify=False)
+            return None
+            
+        try:
+            image_bytes = load_and_prepare_image(deck, image_path)
+            if image_bytes:
+                # Clear any previous image loading errors
+                if self.error_message.startswith("Failed to load image") or self.error_message.startswith("Error loading image"):
+                    self.clear_error(notify=False)
+                return image_bytes
+            else:
+                # Image loading failed
+                self.set_error(f"Failed to load image: {image_path}", notify=False)
+                return None
+                
+        except Exception as e:
+            self.set_error(f"Error loading image: {e}", notify=False)
+            return None
+    
+    def file_changed(self, filename: str) -> bool:
+        """Called by devices.py when any file in button directory changes.
+        
+        Button decides what to do based on the filename.
+        
+        Args:
+            filename: Name of the changed file
+            
+        Returns:
+            bool: True if this file change was handled, False if ignored
+        """
+        if filename.startswith("image."):
+            # Image file changed - devices.py will handle updating display
+            return True
+        elif filename.startswith("background."):
+            logger.debug(f"Background script changed in {self.working_dir}")
             self.process_manager.stop_script("background")
             success = self.process_manager.start_script("background", "background")
             if success:
                 # Clear any previous error state when background script restarts successfully
                 self.clear_error()
             else:
-                self.set_error(f"Failed to restart {script_type} script")
-        elif script_type == "update":
+                self.set_error("Failed to restart background script")
+            return True
+        elif filename.startswith("update."):
+            logger.debug(f"Update script changed in {self.working_dir}")
             # Update script is optional - not finding it is not an error
             self.process_manager.start_script("update", "update")
+            return True
+        elif filename.startswith("action."):
+            logger.debug(f"Action script changed in {self.working_dir}")
+            # Action scripts don't need restart - they run on button press
+            return True
+        
+        return False
                 
     def _monitor_background(self):
         """Background thread that checks every second for crashed background scripts.
