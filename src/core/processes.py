@@ -16,77 +16,72 @@ from ..utils import logger
 class ProcessManager:
     """Manages script processes with crash protection."""
     
-    def __init__(self, working_dir: str):
+    def __init__(self, working_dir: str, on_script_completed=None):
         """Initialize process manager.
         
         Args:
             working_dir: Working directory for scripts
+            on_script_completed: Callback when any script completes (called with script_type: str, exit_code: int)
         """
         self.working_dir = working_dir
         self.processes: Dict[str, subprocess.Popen] = {}
-        self.crash_timestamps: Dict[str, List[float]] = defaultdict(list)
-        self.restart_limits = 5
-        self.restart_window = 300  # 5 minutes
         self.lock = threading.RLock()
-        self.script_executors = {
-            "action": self._execute_action,
-            "update": self._execute_update,
-            "background": self._execute_background
-        }
+        
+        # Unified callback
+        self.on_script_completed = on_script_completed
+        
+        # Background monitoring
+        self.monitor_thread: Optional[threading.Thread] = None
+        self.monitoring = False
         
         # Find config directory from working_dir (go up one level from button directory)
         self.config_dir = os.path.dirname(working_dir)
         
-    def start_script(self, script_type: str) -> bool:
-        """Start script of given type.
+    def start_script(self, script_name: str, sync: bool = False) -> bool:
+        """Start script with specified execution mode.
         
         Args:
-            script_type: Type of script (action, update, background)
+            script_name: Name of the script to start
+            sync: If True, run synchronously and wait for completion.
+                  If False, run asynchronously and track process.
             
         Returns:
-            bool: True if script started successfully
+            bool: True if script started/completed successfully
         """
-        if script_type == "background" and self.is_running(script_type):
-            return True
-            
-        self.stop_script(script_type)
-        
-        script_path = self._find_script_file(script_type)
+        script_path = self._find_script_file(script_name)
         if not script_path:
             return False
             
         ext = script_path.split('.')[-1]
         cmd = SUPPORTED_SCRIPTS.get(ext)
         if not cmd:
-            logger.error(f"Unsupported script type: {ext}")
+            logger.error(f"Unsupported script extension: {ext}")
             return False
             
-        try:
-            executor = self.script_executors.get(script_type)
-            if not executor:
-                logger.error(f"Unknown script type: {script_type}")
-                return False
-                
-            return executor(cmd, script_path)
-                
-        except Exception as e:
-            logger.error(f"Error starting {script_type} script {script_name}: {e}")
-            return False
+        return self._execute_script(cmd, script_path, script_name, sync=sync)
+    
+    def start_script_async(self, script_name: str) -> bool:
+        """Start script asynchronously and track it."""
+        return self.start_script(script_name, sync=False)
+        
+    def start_script_sync(self, script_name: str) -> bool:
+        """Start script synchronously and wait for completion."""
+        return self.start_script(script_name, sync=True)
             
-    def stop_script(self, script_type: str):
-        """Stop script of given type and all child processes.
+    def stop_script(self, script_name: str):
+        """Stop script and all child processes.
         
         Args:
-            script_type: Type of script to stop
+            script_name: Name of script to stop
         """
         with self.lock:
-            if script_type in self.processes:
-                process = self.processes[script_type]
+            if script_name in self.processes:
+                process = self.processes[script_name]
                 try:
                     if process.poll() is None:  # Still running
                         try:
                             pgid = os.getpgid(process.pid)
-                            logger.debug(f"Stopping {script_type} script (PID: {process.pid}, PGID: {pgid})")
+                            logger.debug(f"Stopping {script_name} script (PID: {process.pid}, PGID: {pgid})")
                             
                             # Kill entire process group to catch child processes
                             try:
@@ -114,109 +109,49 @@ class ProcessManager:
                                 process.wait()
                                 
                 except Exception as e:
-                    logger.error(f"Error stopping {script_type} script: {e}")
+                    logger.error(f"Error stopping {script_name} script: {e}")
                 finally:
-                    del self.processes[script_type]
+                    del self.processes[script_name]
                     
-    def restart_script(self, script_type: str) -> bool:
-        """Restart script with crash protection.
         
-        Args:
-            script_type: Type of script to restart
-            
-        Returns:
-            bool: True if restart allowed and successful
-        """
-        current_time = time.time()
-        key = script_type
-        
-        with self.lock:
-            # Sliding window crash protection: only count crashes within time window
-            # Prevents infinite restart loops for fundamentally broken scripts
-            self.crash_timestamps[key] = [
-                ts for ts in self.crash_timestamps[key]
-                if current_time - ts < self.restart_window
-            ]
-            
-            self.crash_timestamps[key].append(current_time)
-            
-            if len(self.crash_timestamps[key]) > self.restart_limits:
-                logger.warn(f"Script {script_type} crashed too many times. Giving up.")
-                return False
-                
-        time.sleep(2)
-        return self.start_script(script_type)
-        
-    def is_running(self, script_type: str) -> bool:
+    def is_running(self, script_name: str) -> bool:
         """Check if script is running.
         
         Args:
-            script_type: Type of script to check
+            script_name: Name of script to check
             
         Returns:
             bool: True if script is running
         """
         with self.lock:
-            if script_type not in self.processes:
+            if script_name not in self.processes:
                 return False
-            return self.processes[script_type].poll() is None
+            return self.processes[script_name].poll() is None
             
-    def wait_for_action_completion(self) -> Optional[int]:
-        """Wait for action script to complete and return exit code.
-        
-        Returns:
-            Optional[int]: Exit code or None if no action process
-        """
-        with self.lock:
-            if "action" not in self.processes:
-                return None
-                
-            process = self.processes["action"]
-            
-        try:
-            # Wait for process to complete with 10 second timeout
-            exit_code = process.wait(timeout=10)
-            return exit_code
-        except subprocess.TimeoutExpired:
-            # Action script is taking too long, kill it
-            logger.warning("Action script timeout, killing process")
-            try:
-                pgid = os.getpgid(process.pid)
-                os.killpg(pgid, signal.SIGTERM)
-                exit_code = process.wait(timeout=2)
-            except:
-                exit_code = -1  # Force kill failed
-            return exit_code
-        except Exception as e:
-            logger.error(f"Error waiting for action completion: {e}")
-            return None
-        finally:
-            # Clean up process from tracking
-            with self.lock:
-                if "action" in self.processes:
-                    del self.processes["action"]
 
-    def get_exit_code(self, script_type: str) -> Optional[int]:
-        """Get exit code of script if terminated.
+            
+    def start_monitoring(self):
+        """Start background process monitoring."""
+        if self.monitoring:
+            return
+            
+        self.monitoring = True
+        self.monitor_thread = threading.Thread(target=self._monitor_all_processes, daemon=True)
+        self.monitor_thread.start()
         
-        Args:
-            script_type: Type of script
+    def stop_monitoring(self):
+        """Stop background process monitoring."""
+        if not self.monitoring:
+            return
             
-        Returns:
-            Optional[int]: Exit code or None if still running
-        """
-        with self.lock:
-            if script_type not in self.processes:
-                return None
-            
-            process = self.processes[script_type]
-            exit_code = process.poll()
-            if exit_code is not None:
-                # Process terminated, remove from tracking
-                del self.processes[script_type]
-            return exit_code
-            
+        self.monitoring = False
+        
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=2)
+    
     def cleanup(self):
+        self.stop_monitoring()
+        
         with self.lock:
             for script_type in list(self.processes.keys()):
                 self.stop_script(script_type)
@@ -279,66 +214,82 @@ class ProcessManager:
             
         return env_vars
         
-    def _execute_action(self, cmd: List[str], script_path: str) -> bool:
-        """Execute action script - run once and exit."""
+    def _execute_script(self, cmd: List[str], script_path: str, script_name: str, sync: bool) -> bool:
+        """Execute script with specified execution mode.
+        
+        Args:
+            cmd: Command list to execute
+            script_path: Path to script file
+            script_name: Name of script for tracking
+            sync: If True, run synchronously. If False, run asynchronously.
+            
+        Returns:
+            bool: True if script started/completed successfully
+        """
         env = os.environ.copy()
         env.update(self._load_env_vars())
         
-        # Execute action script synchronously with timeout to catch exit code
-        try:
-            process = subprocess.Popen(
-                cmd + [script_path], 
-                cwd=self.working_dir, 
-                env=env,
-                preexec_fn=os.setsid  # Create new session for child isolation
-            )
-            
-            with self.lock:
-                self.processes["action"] = process
-                
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error starting action script: {e}")
-            return False
-        
-    def _execute_update(self, cmd: List[str], script_path: str) -> bool:
-        """Execute update script - run synchronously."""
-        # Synchronous execution: update scripts must complete before button starts
-        # 30-second timeout prevents hanging on unresponsive scripts
-        env = os.environ.copy()
-        env.update(self._load_env_vars())
-        result = subprocess.run(
-            cmd + [script_path],
-            cwd=self.working_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env
-        )
-        return result.returncode == 0
-        
-    def _execute_background(self, cmd: List[str], script_path: str) -> bool:
-        """Execute background script - run continuously."""
-        # Store process handle for monitoring and lifecycle management
-        with self.lock:
-            env = os.environ.copy()
-            env.update(self._load_env_vars())
-            
-            # Create new process group to isolate child processes
-            process = subprocess.Popen(
-                cmd + [script_path],
-                cwd=self.working_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                preexec_fn=os.setsid  # Create new session and process group
-            )
-            self.processes["background"] = process
+        if sync:
+            # Synchronous execution with 30-second timeout
             try:
-                pgid = os.getpgid(process.pid)
-                logger.debug(f"Started background script (PID: {process.pid}, PGID: {pgid})")
-            except OSError:
-                logger.debug(f"Started background script (PID: {process.pid})")
-        return True
+                result = subprocess.run(
+                    cmd + [script_path],
+                    cwd=self.working_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    env=env
+                )
+                logger.debug(f"Completed {script_name} script with exit code {result.returncode}")
+                return result.returncode == 0
+            except Exception as e:
+                logger.error(f"Error executing {script_name} script: {e}")
+                return False
+        else:
+            # Asynchronous execution - stop any existing script first
+            self.stop_script(script_name)
+            
+            try:
+                process = subprocess.Popen(
+                    cmd + [script_path], 
+                    cwd=self.working_dir, 
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    preexec_fn=os.setsid  # Create new session for child isolation
+                )
+                
+                with self.lock:
+                    self.processes[script_name] = process
+                    
+                logger.debug(f"Started {script_name} script (PID: {process.pid})")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Error starting {script_name} script: {e}")
+                return False
+            
+    def _monitor_all_processes(self):
+        """Monitor all running processes and notify about completions.
+        
+        Universal monitoring loop that checks all active processes.
+        """
+        while self.monitoring:
+            with self.lock:
+                # Check all running processes for completion
+                completed_processes = []
+                for script_name, process in list(self.processes.items()):
+                    exit_code = process.poll()
+                    if exit_code is not None:
+                        # Process completed
+                        completed_processes.append((script_name, exit_code))
+                        del self.processes[script_name]
+                        
+                # Notify about completed processes
+                for script_name, exit_code in completed_processes:
+                    if self.on_script_completed:
+                        self.on_script_completed(script_name, exit_code)
+                        
+            # Use threading.Event().wait() instead of time.sleep() for better thread responsiveness
+            threading.Event().wait(1)  # Check every second

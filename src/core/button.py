@@ -1,6 +1,7 @@
 """Stream Deck button implementation."""
 
 import os
+import time
 import threading
 from typing import Optional
 from .processes import ProcessManager
@@ -22,15 +23,21 @@ class Button:
         self.working_dir = working_dir
         self.request_redraw = request_redraw
         
-        # Process manager for this button
-        self.process_manager = ProcessManager(working_dir)
-        
-        # Monitor thread for background processes
-        self.monitor_thread: Optional[threading.Thread] = None
-        self.running = False
-        
         # Error state tracking
         self.failed = False
+        
+        # Background script crash protection
+        self.background_crash_timestamps = []
+        self.restart_limits = 5
+        self.restart_window = 300  # 5 minutes
+        
+        # Process manager for this button with unified callback
+        self.process_manager = ProcessManager(
+            working_dir,
+            on_script_completed=self._on_script_completed
+        )
+        
+        self.running = False
         
     def load_config(self) -> bool:
         """Called by StreamDeckManager after button creation to run update script.
@@ -49,7 +56,7 @@ class Button:
             self.request_redraw()
         
         # Update script is optional - not finding it is not an error
-        self.process_manager.start_script("update")
+        self.process_manager.start_script_sync("update")
         
         return True
         
@@ -57,13 +64,16 @@ class Button:
         """Called when button files change to recreate ProcessManager and restart scripts."""
         self.stop()
         
-        self.process_manager = ProcessManager(self.working_dir)
+        self.process_manager = ProcessManager(
+            self.working_dir,
+            on_script_completed=self._on_script_completed
+        )
             
         self.load_config()
         self.start()
         
     def start(self):
-        """Called after device connection to start background script and monitoring thread."""
+        """Called after device connection to start background script and monitoring."""
         if self.running:
             return
             
@@ -71,11 +81,10 @@ class Button:
         
         # Start background script if exists (only if not already running)
         if not self.process_manager.is_running("background"):
-            self.process_manager.start_script("background")
+            self.process_manager.start_script_async("background")
         
-        # Start monitor thread
-        self.monitor_thread = threading.Thread(target=self._monitor_background, daemon=True)
-        self.monitor_thread.start()
+        # Start process monitoring
+        self.process_manager.start_monitoring()
         
     def stop(self):
         """Called during shutdown or disconnection to cleanup all processes and threads."""
@@ -85,17 +94,12 @@ class Button:
         self.running = False
         
         self.process_manager.cleanup()
-            
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_thread.join(timeout=2)
         
     def handle_press(self):
         """Called by StreamDeckManager when physical button is pressed to execute action script."""
         # Action script is optional - not finding it is not an error
-        success = self.process_manager.start_script("action")
-        if success:
-            # Start monitoring action script in background thread
-            threading.Thread(target=self._monitor_action, daemon=True).start()
+        # Process manager will automatically monitor action completion
+        self.process_manager.start_script_async("action")
         
         
     def _find_image_file(self) -> Optional[str]:
@@ -140,7 +144,7 @@ class Button:
         elif filename.startswith("background."):
             logger.debug(f"Background script changed in {self.working_dir}")
             self.process_manager.stop_script("background")
-            success = self.process_manager.start_script("background")
+            success = self.process_manager.start_script_async("background")
             if success:
                 if self.failed:
                     self.failed = False
@@ -152,7 +156,7 @@ class Button:
         elif filename.startswith("update."):
             logger.debug(f"Update script changed in {self.working_dir}")
             # Update script is optional - not finding it is not an error
-            self.process_manager.start_script("update")
+            self.process_manager.start_script_sync("update")
             return True
         elif filename.startswith("action."):
             logger.debug(f"Action script changed in {self.working_dir}")
@@ -161,41 +165,58 @@ class Button:
         
         return False
                 
-    def _monitor_background(self):
-        """Background thread that checks every second for crashed background scripts.
+    def _on_script_completed(self, script_name: str, exit_code: int):
+        """Called by ProcessManager when any script completes.
         
-        Automatically restarts crashed scripts with crash protection limits.
+        Args:
+            script_name: Name of script that completed (action, background, update)
+            exit_code: Exit code of the script
         """
-        
-        while self.running:
-            # Check for exit code first (this also removes terminated processes)
-            exit_code = self.process_manager.get_exit_code("background")
-            if exit_code is not None:
-                success = self.process_manager.restart_script("background")
-                if not success:
-                    self.failed = True
+        if script_name == "background":
+            # Background script crashed, try to restart it with crash protection
+            logger.debug(f"Background script exited with code {exit_code}, checking restart limits...")
+            
+            current_time = time.time()
+            
+            # Sliding window crash protection
+            self.background_crash_timestamps = [
+                ts for ts in self.background_crash_timestamps
+                if current_time - ts < self.restart_window
+            ]
+            
+            self.background_crash_timestamps.append(current_time)
+            
+            if len(self.background_crash_timestamps) > self.restart_limits:
+                logger.warn("Background script crashed too many times. Giving up.")
+                self.failed = True
+                self.request_redraw()
+            else:
+                # Clear any previous error state immediately - we're going to try restart
+                if self.failed:
+                    self.failed = False
                     self.request_redraw()
                     
-            # Use threading.Event().wait() instead of time.sleep() for better thread responsiveness
-            # Allows clean shutdown when self.running becomes False
-            threading.Event().wait(1)  # Check every second
-            
-    
-    def _monitor_action(self):
-        """Monitor action script for errors and show temporary error on failure."""
-        
-        # Wait for action process and get its exit code
-        exit_code = self.process_manager.wait_for_action_completion()
-        
-        if exit_code is not None and exit_code != 0:
-            # Action failed, show error temporarily
-            self.failed = True
-            self.request_redraw()
-            
-            # Clear error after 2 seconds to restore normal display
-            def clear_action_error():
-                self.failed = False
+                # Wait a bit before restart to avoid rapid restart loops
+                def restart_after_delay():
+                    success = self.process_manager.start_script_async("background")
+                    if not success:
+                        # Failed to restart, show error
+                        self.failed = True
+                        self.request_redraw()
+                
+                threading.Timer(2.0, restart_after_delay).start()
+        elif script_name == "action":
+            # Action script completed
+            if exit_code != 0:
+                # Action failed, show error temporarily
+                self.failed = True
                 self.request_redraw()
                 
-            threading.Timer(2.0, clear_action_error).start()
+                # Clear error after 2 seconds to restore normal display
+                def clear_action_error():
+                    self.failed = False
+                    self.request_redraw()
+                    
+                threading.Timer(2.0, clear_action_error).start()
+        # Update scripts are handled synchronously, no callback needed
     

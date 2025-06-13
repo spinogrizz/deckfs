@@ -39,7 +39,7 @@ class TestButton(unittest.TestCase):
         # Create update script
         self._create_file("update.py", "print('updating')")
         
-        with patch.object(self.button.process_manager, 'start_script', return_value=True) as mock_start:
+        with patch.object(self.button.process_manager, 'start_script_sync', return_value=True) as mock_start:
             result = self.button.load_config()
             
             self.assertTrue(result)
@@ -55,7 +55,7 @@ class TestButton(unittest.TestCase):
         
     def test_load_config_no_update_script(self):
         """Test loading config when no update script exists."""
-        with patch.object(self.button.process_manager, 'start_script', return_value=False) as mock_start:
+        with patch.object(self.button.process_manager, 'start_script_sync', return_value=False) as mock_start:
             result = self.button.load_config()
             
             self.assertTrue(result)  # Still returns True even if update script doesn't exist
@@ -64,40 +64,44 @@ class TestButton(unittest.TestCase):
     def test_start_button_first_time(self):
         """Test starting button for the first time."""
         with patch.object(self.button.process_manager, 'is_running', return_value=False), \
-             patch.object(self.button.process_manager, 'start_script', return_value=True) as mock_start:
+             patch.object(self.button.process_manager, 'start_script_async', return_value=True) as mock_start, \
+             patch.object(self.button.process_manager, 'start_monitoring') as mock_start_monitoring:
             
             self.button.start()
             
             self.assertTrue(self.button.running)
-            self.assertIsNotNone(self.button.monitor_thread)
             mock_start.assert_called_once_with("background")
+            mock_start_monitoring.assert_called_once()
             
     def test_start_button_already_running(self):
         """Test starting button when already running."""
         self.button.running = True
         
-        with patch.object(self.button.process_manager, 'start_script') as mock_start:
+        with patch.object(self.button.process_manager, 'start_script_async') as mock_start, \
+             patch.object(self.button.process_manager, 'start_monitoring') as mock_start_monitoring:
             self.button.start()
             
-            # Should not start background script again
+            # Should not start anything again
             mock_start.assert_not_called()
+            mock_start_monitoring.assert_not_called()
             
     def test_start_button_background_already_running(self):
         """Test starting button when background process already exists."""
         with patch.object(self.button.process_manager, 'is_running', return_value=True), \
-             patch.object(self.button.process_manager, 'start_script') as mock_start:
+             patch.object(self.button.process_manager, 'start_script_async') as mock_start, \
+             patch.object(self.button.process_manager, 'start_monitoring') as mock_start_monitoring:
             
             self.button.start()
             
             self.assertTrue(self.button.running)
-            # Should not start background script if already running
+            # Should not start background script if already running, but should start monitoring
             mock_start.assert_not_called()
+            mock_start_monitoring.assert_called_once()
             
     def test_stop_button(self):
         """Test stopping button."""
         # Start button first
         self.button.running = True
-        self.button.monitor_thread = threading.Thread(target=lambda: None)
         
         with patch.object(self.button.process_manager, 'cleanup') as mock_cleanup:
             self.button.stop()
@@ -115,7 +119,7 @@ class TestButton(unittest.TestCase):
             
     def test_handle_press(self):
         """Test handling button press."""
-        with patch.object(self.button.process_manager, 'start_script', return_value=True) as mock_start:
+        with patch.object(self.button.process_manager, 'start_script_async', return_value=True) as mock_start:
             self.button.handle_press()
             
             mock_start.assert_called_once_with("action")
@@ -152,7 +156,7 @@ class TestButton(unittest.TestCase):
         os.chmod(self.temp_dir, 0o000)
         
         try:
-            with patch.object(self.button.process_manager, 'start_script') as mock_start:
+            with patch.object(self.button.process_manager, 'start_script_sync') as mock_start:
                 result = self.button.load_config()
                 # Should still return True but fail to execute scripts
                 self.assertTrue(result)
@@ -174,7 +178,7 @@ class TestButton(unittest.TestCase):
     def test_file_changed_background_script(self):
         """Test handling background script change."""
         with patch.object(self.button.process_manager, 'stop_script') as mock_stop, \
-             patch.object(self.button.process_manager, 'start_script') as mock_start:
+             patch.object(self.button.process_manager, 'start_script_async') as mock_start:
             
             handled = self.button.file_changed("background.py")
             
@@ -184,7 +188,7 @@ class TestButton(unittest.TestCase):
             
     def test_file_changed_update_script(self):
         """Test handling update script change."""
-        with patch.object(self.button.process_manager, 'start_script') as mock_start, \
+        with patch.object(self.button.process_manager, 'start_script_sync') as mock_start, \
              patch.object(self.button.process_manager, 'stop_script') as mock_stop:
             
             handled = self.button.file_changed("update.sh")
@@ -195,7 +199,7 @@ class TestButton(unittest.TestCase):
             
     def test_file_changed_action_script(self):
         """Test handling action script change (logs but does nothing else)."""
-        with patch.object(self.button.process_manager, 'start_script') as mock_start, \
+        with patch.object(self.button.process_manager, 'start_script_async') as mock_start, \
              patch.object(self.button.process_manager, 'stop_script') as mock_stop:
             
             handled = self.button.file_changed("action.js")
@@ -273,61 +277,38 @@ class TestButton(unittest.TestCase):
             mock_load.assert_called_once()
             mock_start.assert_called_once()
             
-    def test_monitor_background_process_running(self):
-        """Test background process monitoring when process is running."""
-        self.button.running = True
+    def test_on_script_completed_background_success(self):
+        """Test callback when background script crashes but restart succeeds."""
+        # Set initial failed state to test clearing
+        self.button.failed = True
         
-        with patch.object(self.button.process_manager, 'is_running', return_value=True), \
-             patch.object(self.button.process_manager, 'get_exit_code', return_value=None), \
-             patch.object(self.button.process_manager, 'restart_script') as mock_restart:
+        with patch.object(self.button.process_manager, 'start_script_async', return_value=True):
+            # When restart succeeds, button should clear error
+            self.button._on_script_completed("background", 1)
             
-            # Run monitor for a short time
-            monitor_thread = threading.Thread(target=self.button._monitor_background)
-            monitor_thread.start()
+        # Button should clear error immediately when restart is attempted
+        self.assertFalse(self.button.failed)
             
-            time.sleep(0.1)  # Let it run briefly
-            self.button.running = False  # Stop monitoring
-            monitor_thread.join(timeout=1)
-            
-            # Should not restart running process
-            mock_restart.assert_not_called()
-            
-    def test_monitor_background_process_crashed(self):
-        """Test background process monitoring when process crashes."""
-        self.button.running = True
+    def test_on_script_completed_background_failure(self):
+        """Test callback when background script crashes and restart fails."""
+        mock_request_redraw = unittest.mock.Mock()
+        self.button.request_redraw = mock_request_redraw
         
-        with patch.object(self.button.process_manager, 'is_running', return_value=True), \
-             patch.object(self.button.process_manager, 'get_exit_code', return_value=1), \
-             patch.object(self.button.process_manager, 'restart_script', return_value=True) as mock_restart:
+        with patch.object(self.button.process_manager, 'start_script_async', return_value=False):
+            # When restart fails, button should show error
+            self.button._on_script_completed("background", 1)
             
-            # Run monitor for a short time
-            monitor_thread = threading.Thread(target=self.button._monitor_background)
-            monitor_thread.start()
+        # Wait for timer to complete restart attempt
+        time.sleep(2.1)
+        self.assertTrue(self.button.failed)
+        self.assertGreaterEqual(mock_request_redraw.call_count, 1)
             
-            time.sleep(1.1)  # Let it run one monitoring cycle
-            self.button.running = False  # Stop monitoring
-            monitor_thread.join(timeout=2)
-            
-            # Should restart crashed process
-            mock_restart.assert_called_with("background")
-            
-    def test_monitor_background_no_process(self):
-        """Test background process monitoring when no background process exists."""
-        self.button.running = True
+    def test_on_script_completed_action_success(self):
+        """Test callback when action script completes successfully."""
+        # When action succeeds (exit code 0), button should not show error
+        self.button._on_script_completed("action", 0)
         
-        with patch.object(self.button.process_manager, 'is_running', return_value=False), \
-             patch.object(self.button.process_manager, 'restart_script') as mock_restart:
-            
-            # Run monitor for a short time
-            monitor_thread = threading.Thread(target=self.button._monitor_background)
-            monitor_thread.start()
-            
-            time.sleep(0.1)  # Let it run briefly
-            self.button.running = False  # Stop monitoring
-            monitor_thread.join(timeout=1)
-            
-            # Should not try to restart non-existent process
-            mock_restart.assert_not_called()
+        self.assertFalse(self.button.failed)
             
     def test_integration_full_lifecycle(self):
         """Test full button lifecycle integration."""
@@ -338,7 +319,8 @@ class TestButton(unittest.TestCase):
         self._create_file("image.png", "binary image data")
         
         # Mock process manager methods
-        with patch.object(self.button.process_manager, 'start_script', return_value=True) as mock_start, \
+        with patch.object(self.button.process_manager, 'start_script_sync', return_value=True) as mock_start_sync, \
+             patch.object(self.button.process_manager, 'start_script_async', return_value=True) as mock_start_async, \
              patch.object(self.button.process_manager, 'is_running', return_value=False), \
              patch.object(self.button.process_manager, 'cleanup') as mock_cleanup:
             
@@ -361,21 +343,32 @@ class TestButton(unittest.TestCase):
             handled = self.button.file_changed("background.py")
             self.assertTrue(handled)
             
-            # 6. Stop button
+            # 6. Test script completion callback
+            self.button._on_script_completed("action", 0)
+            
+            # 7. Stop button
             self.button.stop()
             self.assertFalse(self.button.running)
             
             # Verify expected calls
-            expected_calls = [
+            # Sync calls: update script
+            expected_sync_calls = [
                 ("update",),      # From load_config
+            ]
+            
+            # Async calls: background and action scripts
+            expected_async_calls = [
                 ("background",),  # From start
                 ("action",),      # From handle_press
                 ("background",),  # From handle_script_change
             ]
             
-            # Check that start_script was called with expected arguments
-            actual_calls = [call.args for call in mock_start.call_args_list]
-            self.assertEqual(len(actual_calls), 4)  # Should have 4 calls
+            # Check that sync and async methods were called with expected arguments
+            actual_sync_calls = [call.args for call in mock_start_sync.call_args_list]
+            actual_async_calls = [call.args for call in mock_start_async.call_args_list]
+            
+            self.assertEqual(actual_sync_calls, expected_sync_calls)
+            self.assertEqual(actual_async_calls, expected_async_calls)
             
             mock_cleanup.assert_called_once()
             
@@ -394,7 +387,8 @@ class TestButton(unittest.TestCase):
                 self.button.handle_press()
                 time.sleep(0.01)
                 
-        with patch.object(self.button.process_manager, 'start_script', return_value=True), \
+        with patch.object(self.button.process_manager, 'start_script_sync', return_value=True), \
+             patch.object(self.button.process_manager, 'start_script_async', return_value=True), \
              patch.object(self.button.process_manager, 'is_running', return_value=False), \
              patch.object(self.button.process_manager, 'cleanup'):
             
@@ -412,26 +406,21 @@ class TestButton(unittest.TestCase):
                 
             # Should not raise any exceptions
             
-    def test_error_handling_in_monitor(self):
-        """Test error handling in background monitor thread."""
-        # This test verifies that exceptions in monitor thread don't crash the application
-        # The exception is expected and shows proper error isolation
-        self.button.running = True
+    def test_on_script_completed_action_failure(self):
+        """Test callback when action script fails with temporary error display."""
+        mock_request_redraw = unittest.mock.Mock()
+        self.button.request_redraw = mock_request_redraw
         
-        # Mock process manager to raise exception
-        with patch.object(self.button.process_manager, 'is_running', side_effect=Exception("Test error")):
-            
-            # Run monitor for a short time
-            monitor_thread = threading.Thread(target=self.button._monitor_background)
-            monitor_thread.start()
-            
-            time.sleep(0.1)  # Let it run briefly
-            self.button.running = False  # Stop monitoring
-            monitor_thread.join(timeout=1)
-            
-            # The exception is caught in the background thread and doesn't crash main thread
-            # This test ensures proper error isolation - main thread continues normally
-            self.assertFalse(self.button.running)  # Verify we successfully stopped
+        # When action fails (non-zero exit code), button should show temporary error
+        self.button._on_script_completed("action", 1)
+        
+        self.assertTrue(self.button.failed)
+        self.assertEqual(mock_request_redraw.call_count, 1)
+        
+        # Wait for timer to clear error
+        time.sleep(2.1)
+        self.assertFalse(self.button.failed)
+        self.assertEqual(mock_request_redraw.call_count, 2)
 
 
 if __name__ == '__main__':

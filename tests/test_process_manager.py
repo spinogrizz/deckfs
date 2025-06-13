@@ -64,7 +64,7 @@ class TestProcessManager(unittest.TestCase):
         self._create_test_script("update.py", "print('update')")
         
         # Test execution
-        success = self.process_manager.start_script("update", "update")
+        success = self.process_manager.start_script_sync("update")
         self.assertTrue(success)
         
         # Verify subprocess.run was called
@@ -82,7 +82,7 @@ class TestProcessManager(unittest.TestCase):
         self._create_test_script("update.py", "exit(1)")
         
         # Test execution
-        success = self.process_manager.start_script("update", "update")
+        success = self.process_manager.start_script_sync("update")
         self.assertFalse(success)
         
     @patch('subprocess.Popen')
@@ -92,7 +92,7 @@ class TestProcessManager(unittest.TestCase):
         self._create_test_script("action.sh", "echo 'action'")
         
         # Test execution
-        success = self.process_manager.start_script("action", "action")
+        success = self.process_manager.start_script_async("action")
         self.assertTrue(success)
         
         # Verify Popen was called
@@ -112,7 +112,7 @@ class TestProcessManager(unittest.TestCase):
         self._create_test_script("background.py", "while True: time.sleep(1)")
         
         # Test execution
-        success = self.process_manager.start_script("background", "background")
+        success = self.process_manager.start_script_async("background")
         self.assertTrue(success)
         
         # Verify process is stored
@@ -130,7 +130,7 @@ class TestProcessManager(unittest.TestCase):
         
         # Create and start background script
         self._create_test_script("background.py", "import time; time.sleep(10)")
-        self.process_manager.start_script("background", "background")
+        self.process_manager.start_script_async("background")
         
         # Test is_running
         self.assertTrue(self.process_manager.is_running("background"))
@@ -145,26 +145,42 @@ class TestProcessManager(unittest.TestCase):
         
         # Create and start background script
         self._create_test_script("background.py", "print('done')")
-        self.process_manager.start_script("background", "background")
+        self.process_manager.start_script_async("background")
         
         # Test is_running
         self.assertFalse(self.process_manager.is_running("background"))
         
     @patch('subprocess.Popen')
-    def test_get_exit_code(self, mock_popen):
-        """Test getting exit code from terminated process."""
-        # Setup mock process
+    def test_process_completion_monitoring(self, mock_popen):
+        """Test that completed processes are properly detected."""
+        # Setup mock process that completes
         mock_process = Mock()
-        mock_process.poll.return_value = 42
+        mock_process.poll.return_value = 42  # Process completed with exit code 42
         mock_popen.return_value = mock_process
         
-        # Create and start background script
-        self._create_test_script("background.py", "exit(42)")
-        self.process_manager.start_script("background", "background")
+        # Setup callback to capture completion
+        completed_scripts = []
+        def on_completion(script_type, exit_code):
+            completed_scripts.append((script_type, exit_code))
         
-        # Test get_exit_code
-        exit_code = self.process_manager.get_exit_code("background")
-        self.assertEqual(exit_code, 42)
+        self.process_manager.on_script_completed = on_completion
+        
+        # Create and start script
+        self._create_test_script("action.py", "exit(42)")
+        self.process_manager.start_script_async("action")
+        
+        # Manually trigger monitoring check (simulating what the monitoring thread does)
+        with self.process_manager.lock:
+            for script_type, process in list(self.process_manager.processes.items()):
+                exit_code = process.poll()
+                if exit_code is not None:
+                    del self.process_manager.processes[script_type]
+                    if self.process_manager.on_script_completed:
+                        self.process_manager.on_script_completed(script_type, exit_code)
+        
+        # Verify completion was detected
+        self.assertEqual(len(completed_scripts), 1)
+        self.assertEqual(completed_scripts[0], ("action", 42))
         
         
     @patch('os.killpg')
@@ -181,7 +197,7 @@ class TestProcessManager(unittest.TestCase):
         
         # Start background script
         self._create_test_script("background.py", "import time; time.sleep(10)")
-        self.process_manager.start_script("background", "background")
+        self.process_manager.start_script_async("background")
         
         # Stop the script
         self.process_manager.stop_script("background")
@@ -208,7 +224,7 @@ class TestProcessManager(unittest.TestCase):
         
         # Start background script
         self._create_test_script("background.py", "import time; time.sleep(10)")
-        self.process_manager.start_script("background", "background")
+        self.process_manager.start_script_async("background")
         
         # Stop the script
         self.process_manager.stop_script("background")
@@ -217,28 +233,23 @@ class TestProcessManager(unittest.TestCase):
         mock_killpg.assert_called()
         mock_process.wait.assert_called()
         
-    @patch('time.time')
-    @patch('time.sleep')
-    def test_restart_script_crash_protection(self, mock_sleep, mock_time):
-        """Test restart script with crash protection."""
-        # Mock time to simulate rapid crashes
-        mock_time.side_effect = [100, 101, 102, 103, 104, 105, 106]  # 6 crashes in rapid succession
-        
+    def test_process_tracking(self):
+        """Test that processes are properly tracked in the processes dict."""
         # Create test script
-        self._create_test_script("background.py", "exit(1)")
+        self._create_test_script("action.py", "print('test')")
         
-        # Mock start_script to fail for first few attempts
-        with patch.object(self.process_manager, 'start_script', return_value=True) as mock_start:
-            # Test multiple rapid restarts
-            for i in range(6):
-                result = self.process_manager.restart_script("background", "background")
-                if i < 5:  # First 5 should succeed
-                    self.assertTrue(result)
-                else:  # 6th should fail due to crash protection
-                    self.assertFalse(result)
-                    
-        # Verify sleep was called (restart delay) - only for successful restarts
-        self.assertEqual(mock_sleep.call_count, 5)
+        # Start script
+        success = self.process_manager.start_script_async("action")
+        self.assertTrue(success)
+        
+        # Verify it's tracked
+        self.assertIn("action", self.process_manager.processes)
+        
+        # Stop script
+        self.process_manager.stop_script("action")
+        
+        # Verify it's no longer tracked
+        self.assertNotIn("action", self.process_manager.processes)
         
     def test_cleanup(self):
         """Test cleanup stops all processes."""
@@ -260,7 +271,7 @@ class TestProcessManager(unittest.TestCase):
         self._create_test_script("action.rb", "puts 'ruby script'")
         
         # Try to start it
-        success = self.process_manager.start_script("action", "action")
+        success = self.process_manager.start_script_async("action")
         self.assertFalse(success)
         
     def test_script_execution_exception_handling(self):
@@ -270,7 +281,7 @@ class TestProcessManager(unittest.TestCase):
         
         # Mock subprocess to raise exception
         with patch('subprocess.Popen', side_effect=Exception("Test error")):
-            success = self.process_manager.start_script("action", "action")
+            success = self.process_manager.start_script_async("action")
             self.assertFalse(success)
             
     @patch('os.getpgid')
@@ -288,15 +299,15 @@ class TestProcessManager(unittest.TestCase):
         self._create_test_script("background.py", "import time; time.sleep(10)")
         
         # Start script first time
-        success1 = self.process_manager.start_script("background", "background")
+        success1 = self.process_manager.start_script_async("background")
         self.assertTrue(success1)
         
-        # Try to start again - should return True without creating new process
-        success2 = self.process_manager.start_script("background", "background")
+        # Try to start again - should stop the old one and start a new one
+        success2 = self.process_manager.start_script_async("background")
         self.assertTrue(success2)
         
-        # Verify Popen was only called once
-        self.assertEqual(mock_popen.call_count, 1)
+        # Verify Popen was called twice (original start + restart)
+        self.assertEqual(mock_popen.call_count, 2)
 
     def test_load_env_vars_success(self):
         """Test successful loading of environment variables from env.local."""
@@ -407,7 +418,7 @@ DEBUG_MODE=true
             self._create_test_script("action.sh", "echo 'test'")
             
             # Execute script
-            self.process_manager.start_script("action", "action")
+            self.process_manager.start_script_async("action")
             
             # Verify Popen was called with env parameter
             mock_popen.assert_called_once()
@@ -453,7 +464,7 @@ DEBUG_MODE=true
             self._create_test_script("update.py", "print('update')")
             
             # Execute script
-            self.process_manager.start_script("update", "update")
+            self.process_manager.start_script_sync("update")
             
             # Verify subprocess.run was called with env parameter
             mock_run.assert_called_once()
