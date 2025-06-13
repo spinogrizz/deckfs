@@ -10,6 +10,7 @@ from collections import defaultdict
 
 from ..utils.config import SUPPORTED_SCRIPTS
 from ..utils.file_utils import find_file
+from ..utils import logger
 
 
 class ProcessManager:
@@ -58,19 +59,19 @@ class ProcessManager:
         ext = script_path.split('.')[-1]
         cmd = SUPPORTED_SCRIPTS.get(ext)
         if not cmd:
-            print(f"Unsupported script type: {ext}")
+            logger.error(f"Unsupported script type: {ext}")
             return False
             
         try:
             executor = self.script_executors.get(script_type)
             if not executor:
-                print(f"Unknown script type: {script_type}")
+                logger.error(f"Unknown script type: {script_type}")
                 return False
                 
             return executor(cmd, script_path)
                 
         except Exception as e:
-            print(f"Error starting {script_type} script {script_name}: {e}")
+            logger.error(f"Error starting {script_type} script {script_name}: {e}")
             return False
             
     def stop_script(self, script_type: str):
@@ -86,7 +87,7 @@ class ProcessManager:
                     if process.poll() is None:  # Still running
                         try:
                             pgid = os.getpgid(process.pid)
-                            print(f"Stopping {script_type} script (PID: {process.pid}, PGID: {pgid})")
+                            logger.debug(f"Stopping {script_type} script (PID: {process.pid}, PGID: {pgid})")
                             
                             # Kill entire process group to catch child processes
                             try:
@@ -96,7 +97,7 @@ class ProcessManager:
                                     process.wait(timeout=5)
                                 except subprocess.TimeoutExpired:
                                     # Force kill if processes don't terminate gracefully
-                                    print(f"Force killing process group {pgid}")
+                                    logger.warn(f"Force killing process group {pgid}")
                                     os.killpg(pgid, signal.SIGKILL)
                                     process.wait()
                             except ProcessLookupError:
@@ -105,7 +106,7 @@ class ProcessManager:
                                 
                         except OSError as e:
                             # Fallback to single process termination if process group operations fail
-                            print(f"Process group termination failed: {e}, falling back to single process")
+                            logger.warn(f"Process group termination failed: {e}, falling back to single process")
                             process.terminate()
                             try:
                                 process.wait(timeout=5)
@@ -114,7 +115,7 @@ class ProcessManager:
                                 process.wait()
                                 
                 except Exception as e:
-                    print(f"Error stopping {script_type} script: {e}")
+                    logger.error(f"Error stopping {script_type} script: {e}")
                 finally:
                     del self.processes[script_type]
                     
@@ -142,7 +143,7 @@ class ProcessManager:
             self.crash_timestamps[key].append(current_time)
             
             if len(self.crash_timestamps[key]) > self.restart_limits:
-                print(f"Script {script_name} crashed too many times. Giving up.")
+                logger.warn(f"Script {script_name} crashed too many times. Giving up.")
                 return False
                 
         time.sleep(2)
@@ -221,7 +222,7 @@ class ProcessManager:
                         
                         # Skip if key is empty
                         if not key:
-                            print(f"Invalid line in env.local:{line_num}: {line}")
+                            logger.debug(f"Invalid line in env.local:{line_num}: {line}")
                             continue
                         
                         # Remove quotes if present
@@ -232,10 +233,10 @@ class ProcessManager:
                             
                         env_vars[key] = value
                     else:
-                        print(f"Invalid line in env.local:{line_num}: {line}")
+                        logger.debug(f"Invalid line in env.local:{line_num}: {line}")
                         
         except Exception as e:
-            print(f"Error reading env.local file: {e}")
+            logger.error(f"Error reading env.local file: {e}")
             
         return env_vars
         
@@ -288,7 +289,7 @@ class ProcessManager:
             self.processes["background"] = process
             try:
                 pgid = os.getpgid(process.pid)
-                print(f"Started background script (PID: {process.pid}, PGID: {pgid})")
+                logger.debug(f"Started background script (PID: {process.pid}, PGID: {pgid})")
             except OSError:
-                print(f"Started background script (PID: {process.pid})")
+                logger.debug(f"Started background script (PID: {process.pid})")
         return True

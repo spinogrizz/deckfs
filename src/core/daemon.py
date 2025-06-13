@@ -3,6 +3,7 @@
 import time
 from .devices import StreamDeckManager
 from ..utils.config import CONFIG_DIR
+from ..utils import logger
 
 
 class StreamDeckDaemon:
@@ -22,28 +23,28 @@ class StreamDeckDaemon:
         if self.running:
             return
             
-        print("Starting stream-deck-fs daemon...")
+        logger.info("Starting stream-deck-fs daemon...")
         
         # Initialize Stream Deck manager
         self.manager = StreamDeckManager(self.config_dir)
         self.manager.initialize()
         
         self.running = True
-        print(f"Daemon started. Monitoring directory: {self.config_dir}")
-        print("Daemon will automatically connect when Stream Deck is available")
-        print("Press Ctrl+C to exit")
+        logger.info(f"Daemon started. Monitoring directory: {self.config_dir}")
+        logger.info("Daemon will automatically connect when Stream Deck is available")
+        logger.info("Press Ctrl+C to exit")
         
     def stop(self):
         if not self.running:
             return
             
-        print("Shutting down daemon...")
+        logger.info("Shutting down daemon...")
         
         if self.manager:
             self.manager.stop()
             
         self.running = False
-        print("Daemon stopped")
+        logger.info("Daemon stopped")
     
     def run(self):
         try:

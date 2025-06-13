@@ -1,5 +1,5 @@
 ## Code
-- [ ] Logging levels for debug/development/production
+- [x] Logging levels for debug/development/production
 - [ ] Support for multiple Stream Decks
 - [x] Test on connect/disconnect events, hot reload
 - [ ] CLI usage to control running daemon

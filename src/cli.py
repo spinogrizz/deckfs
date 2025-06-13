@@ -4,6 +4,7 @@ import argparse
 import sys
 import os
 from .core.daemon import StreamDeckDaemon
+from .utils import logger
 
 
 def create_config_structure():
@@ -12,14 +13,14 @@ def create_config_structure():
     
     if not os.path.exists(config_dir):
         os.makedirs(config_dir)
-        print(f"Created configuration directory: {config_dir}")
+        logger.info(f"Created configuration directory: {config_dir}")
     
     # Create example folders for first three buttons
     for i in range(1, 4):
         button_dir = os.path.join(config_dir, f"{i:02d}")
         if not os.path.exists(button_dir):
             os.makedirs(button_dir)
-            print(f"Created folder for button {i}: {button_dir}")
+            logger.info(f"Created folder for button {i}: {button_dir}")
 
 
 def main():
@@ -59,10 +60,10 @@ def main():
         daemon = StreamDeckDaemon(config_dir=args.config_dir)
         daemon.run()
     except RuntimeError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(f"Error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("Received termination signal")
+        logger.info("Received termination signal")
         sys.exit(0)
 
 

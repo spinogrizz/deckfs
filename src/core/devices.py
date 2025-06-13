@@ -14,6 +14,7 @@ from .files import FileWatcher
 from .button import Button
 from ..utils.config import ConfigManager
 from ..utils.file_utils import *
+from ..utils import logger
 
 
 class StreamDeckManager:
@@ -61,7 +62,7 @@ class StreamDeckManager:
         
         self.file_watcher.start_watching()
         
-        print("Stream Deck manager initialized with device monitoring")
+        logger.info("Stream Deck manager initialized with device monitoring")
         return True
         
     def _get_key_count(self) -> int:
@@ -80,7 +81,7 @@ class StreamDeckManager:
         """Called after device connection to start all configured buttons."""
         for button in self.buttons.values():
             button.start()
-        print("All buttons started")
+        logger.info("All buttons started")
         
     def stop(self):
         """Called at daemon shutdown to cleanup all resources and threads."""
@@ -101,7 +102,7 @@ class StreamDeckManager:
         
         self._disconnect_device()
             
-        print("Stream Deck manager stopped")
+        logger.info("Stream Deck manager stopped")
         
     def reload_button(self, button_id: int):
         """Reload specific button.
@@ -120,14 +121,14 @@ class StreamDeckManager:
             if button.load_config():
                 button.start()
                 self.update_button_image(button_id)
-            print(f"Button {button_id:02d} reloaded")
+            logger.debug(f"Button {button_id:02d} reloaded")
         else:
             self.clear_buttons(button_id)
-            print(f"Button {button_id:02d} removed")
+            logger.debug(f"Button {button_id:02d} removed")
             
     def reload_all(self):
         """Called when button directories are renamed/moved to recreate all buttons."""
-        print("Reloading all buttons...")
+        logger.info("Reloading all buttons...")
         
         for button in self.buttons.values():
             button.stop()
@@ -142,7 +143,7 @@ class StreamDeckManager:
         self._load_all_buttons()
         self.start()
         
-        print("All buttons reloaded")
+        logger.info("All buttons reloaded")
     
     def update_button_image(self, button_id: int):
         """Update button image on device.
@@ -173,7 +174,7 @@ class StreamDeckManager:
             self.deck.set_key_image(key_index, image_bytes)
                         
         except Exception as e:
-            print(f"Button {button_id:02d}: Error updating image: {e}")
+            logger.error(f"Button {button_id:02d}: Error updating image: {e}")
             pass
         
     @classmethod
@@ -186,9 +187,9 @@ class StreamDeckManager:
                 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 blank_path = os.path.join(project_root, 'resources', 'blank.png')
                 cls._blank_image = Image.open(blank_path)
-                print(f"Blank image loaded: {blank_path}")
+                logger.debug(f"Blank image loaded: {blank_path}")
             except Exception as e:
-                print(f"Error loading blank image: {e}")
+                logger.error(f"Error loading blank image: {e}")
                 return None
         return cls._blank_image
     
@@ -215,15 +216,15 @@ class StreamDeckManager:
                 key_count = self._get_key_count()
                 for key_index in range(key_count):
                     self.deck.set_key_image(key_index, image_bytes)
-                print(f"All {key_count} buttons cleared")
+                logger.debug(f"All {key_count} buttons cleared")
             else:
                 if 1 <= button_id <= self._get_key_count():
                     key_index = button_id - 1
                     self.deck.set_key_image(key_index, image_bytes)
-                    print(f"Button {button_id:02d} cleared")
+                    logger.debug(f"Button {button_id:02d} cleared")
                     
         except Exception as e:
-            print(f"Error clearing buttons: {e}")
+            logger.error(f"Error clearing buttons: {e}")
             pass
         
             
@@ -275,10 +276,10 @@ class StreamDeckManager:
             if button_id:
                 affected_buttons.add(button_id)
         
-        print(f"Reloading affected buttons: {sorted(affected_buttons)}")
+        logger.debug(f"Reloading affected buttons: {sorted(affected_buttons)}")
         
         for button_id in affected_buttons:
-            print(f"Reloading button {button_id:02d}")
+            logger.debug(f"Reloading button {button_id:02d}")
             self.reload_button(button_id)
                 
         
@@ -296,7 +297,7 @@ class StreamDeckManager:
         button_id = key + 1  # Convert to 1-based
         
         if button_id in self.buttons:
-            print(f"Button {button_id:02d}: Pressed")
+            logger.debug(f"Button {button_id:02d}: Pressed")
             self.buttons[button_id].handle_press()
     
     def _handle_file_change(self, event):
@@ -317,10 +318,10 @@ class StreamDeckManager:
             self.update_button_image(button_id)
         elif event_type == "modified":
             if filename.startswith("background."):
-                print(f"Button {button_id:02d}: Background script changed")
+                logger.debug(f"Button {button_id:02d}: Background script changed")
                 self.buttons[button_id].handle_script_change("background")
             elif filename.startswith("update."):
-                print(f"Button {button_id:02d}: Update script changed")
+                logger.debug(f"Button {button_id:02d}: Update script changed")
                 self.buttons[button_id].handle_script_change("update")
         
         
@@ -333,7 +334,7 @@ class StreamDeckManager:
         src_path = event.data.get('src_path')
         dest_path = event.data.get('dest_path')
         
-        print(f"Button directories changed: {event_type}")
+        logger.debug(f"Button directories changed: {event_type}")
         
         # Critical: prevent infinite reload loops during button directory changes
         # File watcher must be stopped because reload operations trigger new filesystem events
@@ -347,7 +348,7 @@ class StreamDeckManager:
     
     def _handle_config_change(self, event):
         """Called by FileWatcher when config.yaml changes to reload brightness/debounce settings."""
-        print("Config file changed, reloading configuration...")
+        logger.info("Config file changed, reloading configuration...")
         self.config_manager.reload_config(self.deck, self.debouncer)
         
     def _start_device_monitoring(self):
@@ -366,7 +367,7 @@ class StreamDeckManager:
         
         Runs until shutdown_requested is True. Triggered by USB events or 10-second timeout.
         """
-        print("Device monitoring started")
+        logger.info("Device monitoring started")
         
         with self.device_monitor_lock:
             if not self._is_device_connected():
@@ -385,22 +386,22 @@ class StreamDeckManager:
                     self.device_monitor_event.clear()
                     
                     if self.deck and not self._is_device_connected():
-                        print("Device disconnected (detected via USB event)")
+                        logger.warn("Device disconnected (detected via USB event)")
                         self._handle_device_disconnection()
                 
                 elif self.deck and not self._is_device_connected():
-                    print("Device connection lost (periodic health check)")
+                    logger.warn("Device connection lost (periodic health check)")
                     self._handle_device_disconnection()
                 
                 # Always try to reconnect if no device connected (handles sleep/wake scenarios)
                 if not self._is_device_connected():
-                    print("Attempting to reconnect device...")
+                    logger.info("Attempting to reconnect device...")
                     if self._try_connect_device():
-                        print("Device reconnected successfully!")
+                        logger.info("Device reconnected successfully!")
                     else:
-                        print("Device reconnection failed, will retry in 10 seconds")
+                        logger.warn("Device reconnection failed, will retry in 10 seconds")
                 
-        print("Device monitoring stopped")
+        logger.info("Device monitoring stopped")
         
     def _try_connect_device(self) -> bool:
         """Attempts to find and connect to first available Stream Deck device.
@@ -432,14 +433,14 @@ class StreamDeckManager:
             self.deck.set_key_callback(self._device_key_callback)
             
             device_info = f"{device.deck_type()} (serial: {device.get_serial_number()})"
-            print(f"Connected to {device_info} with {self._get_key_count()} buttons")
+            logger.info(f"Connected to {device_info} with {self._get_key_count()} buttons")
             
             self._on_device_connected()
             
             return True
             
         except Exception as e:
-            print(f"Failed to connect to device: {e}")
+            logger.error(f"Failed to connect to device: {e}")
             return False
             
     def _is_device_connected(self) -> bool:
@@ -455,19 +456,19 @@ class StreamDeckManager:
             is_open = self.deck.is_open()
             return connected and is_open
         except Exception as e:
-            print(f"Device health check failed: {e}")
+            logger.debug(f"Device health check failed: {e}")
             return False
             
     def _handle_device_disconnection(self):
         """Called when device health check fails to cleanup buttons and processes."""
         self._disconnect_device()
         
-        print(f"Stopping {len(self.buttons)} buttons due to device disconnection...")
+        logger.debug(f"Stopping {len(self.buttons)} buttons due to device disconnection...")
         for button_id, button in self.buttons.items():
-            print(f"Stopping button {button_id:02d}")
+            logger.debug(f"Stopping button {button_id:02d}")
             button.stop()  # This calls ProcessManager.cleanup()
         self.buttons.clear()
-        print("All buttons stopped and cleaned up")
+        logger.debug("All buttons stopped and cleaned up")
         
     def _disconnect_device(self):
         """Closes SDK connection and sets deck to None. Safe to call multiple times."""
@@ -475,14 +476,14 @@ class StreamDeckManager:
             try:
                 self.deck.close()
             except Exception as e:
-                print(f"Error closing device: {e}")
+                logger.error(f"Error closing device: {e}")
             finally:
                 self.deck = None
                 
     def _on_device_connected(self):
         """Called after successful device connection to initialize buttons and apply config."""
         if self.buttons:
-            print("Warning: buttons exist during reconnection, cleaning up...")
+            logger.warn("Warning: buttons exist during reconnection, cleaning up...")
             for button in self.buttons.values():
                 button.stop()
             self.buttons.clear()
@@ -490,7 +491,7 @@ class StreamDeckManager:
         self._create_buttons()
         self._load_all_buttons()
         self.start()
-        print(f"Device ready with {len(self.buttons)} buttons")
+        logger.info(f"Device ready with {len(self.buttons)} buttons")
         
     def _start_udev_monitoring(self):
         """Sets up pyudev USB monitoring to detect Stream Deck connect/disconnect events."""
@@ -507,10 +508,10 @@ class StreamDeckManager:
             self.udev_observer.daemon = True
             self.udev_observer.start()
             
-            print("USB device monitoring started")
+            logger.info("USB device monitoring started")
             
         except Exception as e:
-            print(f"Failed to start USB monitoring: {e}")
+            logger.error(f"Failed to start USB monitoring: {e}")
             
     def _stop_udev_monitoring(self):
         """Called during shutdown to stop pyudev observer thread."""
@@ -521,7 +522,7 @@ class StreamDeckManager:
             if self.udev_monitor:
                 self.udev_monitor = None
         except Exception as e:
-            print(f"Error stopping USB monitoring: {e}")
+            logger.error(f"Error stopping USB monitoring: {e}")
             
     def _on_usb_event(self, device):
         """Called by pyudev when USB devices are added/removed.
@@ -539,10 +540,10 @@ class StreamDeckManager:
                                          action == 'add')
                 
                 if is_potential_streamdeck:
-                    print(f"USB device {action}: {device.get('DEVNAME', 'unknown')} "
+                    logger.debug(f"USB device {action}: {device.get('DEVNAME', 'unknown')} "
                           f"(vendor: {vendor_id}, model: {product_id})")
                     
                     self.device_monitor_event.set()
                     
         except Exception as e:
-            print(f"Error processing USB event: {e}")
+            logger.error(f"Error processing USB event: {e}")

@@ -2,6 +2,7 @@
 
 import os
 from typing import List, Optional, Dict
+from . import logger
 
 
 def find_file(directory: str, prefix: str, extensions: List[str]) -> Optional[str]:
@@ -71,7 +72,7 @@ def extract_button_id_from_path(file_path: str, config_dir: str, max_buttons: in
             if 1 <= button_id <= max_buttons:
                 return button_id
     except Exception as e:
-        print(f"Error extracting button ID from {file_path}: {e}")
+        logger.error(f"Error extracting button ID from {file_path}: {e}")
         
     return 0
 

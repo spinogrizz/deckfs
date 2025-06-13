@@ -3,6 +3,7 @@
 import os
 import yaml
 from typing import Dict, Any, Optional
+from . import logger
 
 # Main configuration directory
 CONFIG_DIR = os.path.expanduser("~/.local/streamdeck")
@@ -62,13 +63,13 @@ class ConfigManager:
                     if key in DEFAULT_CONFIG:
                         config[key] = value
                         
-                print(f"Configuration loaded from {self.config_path}")
+                logger.info(f"Configuration loaded from {self.config_path}")
                         
             except Exception as e:
-                print(f"Error loading config file {self.config_path}: {e}")
-                print("Using default configuration")
+                logger.error(f"Error loading config file {self.config_path}: {e}")
+                logger.info("Using default configuration")
         else:
-            print("No config.yaml found, using default configuration")
+            logger.warn("No config.yaml found, using default configuration")
             
         self._config_cache = config
         return config
@@ -95,7 +96,7 @@ class ConfigManager:
         
     def reload_config(self, deck_device=None, debouncer=None):
         """Reload configuration from file and apply all settings."""
-        print("Configuration file changed, reloading...")
+        logger.info("Configuration file changed, reloading...")
         
         # Clear cache to force reload
         self._config_cache = None
@@ -111,12 +112,12 @@ class ConfigManager:
                 brightness = self.get_brightness()
                 deck_device.set_brightness(brightness)
             except Exception as e:
-                print(f"Error applying brightness: {e}")
+                logger.error(f"Error applying brightness: {e}")
         
         if debouncer:
             try:
                 new_interval = self.get_debounce_interval()
                 debouncer.debounce_interval = new_interval
             except Exception as e:
-                print(f"Error applying debounce interval: {e}")
+                logger.error(f"Error applying debounce interval: {e}")
         

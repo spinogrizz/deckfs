@@ -5,6 +5,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from ..utils.debouncer import Debouncer
+from ..utils import logger
 
 
 class FileWatcher(FileSystemEventHandler):
@@ -33,14 +34,14 @@ class FileWatcher(FileSystemEventHandler):
         self.observer = Observer()
         self.observer.schedule(self, path=self.config_dir, recursive=True)
         self.observer.start()
-        print(f"File watcher started for: {self.config_dir}")
+        logger.debug(f"File watcher started for: {self.config_dir}")
         
     def stop_watching(self):
         if self.observer:
             self.observer.stop()
             self.observer.join()
             self.observer = None
-            print("File watcher stopped")
+            logger.debug("File watcher stopped")
             
     def on_any_event(self, event):
         """Handle any file system event.
@@ -109,7 +110,7 @@ class FileWatcher(FileSystemEventHandler):
         
         # Check if directory is directly in config_dir (button folder)
         if self._is_button_directory_event(src_path) or (dest_path and self._is_button_directory_event(dest_path)):
-            print(f"[BUTTON DIR EVENT] {event.event_type}: {src_path}" + (f" -> {dest_path}" if dest_path else ""))
+            logger.debug(f"[BUTTON DIR EVENT] {event.event_type}: {src_path}" + (f" -> {dest_path}" if dest_path else ""))
             
             # Emit button directory change event with longer debouncing for directories
             debounce_key = "button_directories"
@@ -185,5 +186,5 @@ class FileWatcher(FileSystemEventHandler):
             return None
             
         except Exception as e:
-            print(f"Error generating debounce key for {file_path}: {e}")
+            logger.error(f"Error generating debounce key for {file_path}: {e}")
             return None

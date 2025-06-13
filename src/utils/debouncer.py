@@ -5,6 +5,7 @@ import time
 from typing import Dict, List, Callable, Any, Optional
 from collections import defaultdict
 from dataclasses import dataclass
+from . import logger
 
 
 @dataclass
@@ -82,7 +83,7 @@ class Debouncer:
             try:
                 callback(event)
             except Exception as e:
-                print(f"Error in event callback for {event.type}: {e}")
+                logger.error(f"Error in event callback for {event.type}: {e}")
                 
     def _debounce_event(self, event: Event, debounce_key: str):
         """Debounce event by key.
