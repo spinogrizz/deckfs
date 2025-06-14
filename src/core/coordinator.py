@@ -75,6 +75,9 @@ class Coordinator:
         """Called at daemon shutdown to cleanup all resources and threads."""
         self.shutdown_requested = True
         
+        # Clear all buttons before stopping hardware
+        self.clear_buttons()
+        
         # Stop hardware monitoring
         self.hardware.stop_monitoring()
         
@@ -296,6 +299,9 @@ class Coordinator:
                 button.stop()
             self.buttons.clear()
             
+        # Clear all buttons to ensure clean state on reconnect
+        self.clear_buttons()
+            
         # Apply configuration settings
         self.config_manager.apply_all_settings(deck, self.debouncer)
             
@@ -307,6 +313,10 @@ class Coordinator:
     def _on_device_disconnected(self):
         """Called by DeviceHardwareManager when device disconnects."""
         logger.debug(f"Stopping {len(self.buttons)} buttons due to device disconnection...")
+        
+        # Clear all buttons before cleanup
+        self.clear_buttons()
+        
         for button_id, button in self.buttons.items():
             logger.debug(f"Stopping button {button_id:02d}")
             button.stop()

@@ -9,6 +9,7 @@
 - [x] Display error image on Stream Deck if plugin is failed to load
 - [ ] Verify before running a plugin, after it changed
 - [ ] More secure way to store credentials
+- [x] Clear buttons on connect or daemon stop
 - [ ] Sandboxed execution of plugins, correct permissions to outside world
 
 ## Deployment
