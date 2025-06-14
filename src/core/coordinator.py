@@ -5,7 +5,7 @@ from ..utils.debouncer import Debouncer
 from .files import FileWatcher
 from .button import Button
 from .hardware import DeviceHardwareManager
-from ..utils.config import ConfigManager
+from ..utils.config import ConfigManager, get_config
 from ..utils.file_utils import *
 from ..utils.image_utils import prepare_image_for_deck, load_blank_image, load_error_image
 from ..utils import logger
@@ -28,7 +28,8 @@ class Coordinator:
         self.shutdown_requested = False
         
         # Configuration and file watching
-        self.config_manager = ConfigManager(config_dir)
+        # Get global config (will initialize automatically if needed)
+        self.config_manager = get_config(config_dir)
         debounce_interval = self.config_manager.get_debounce_interval()
         self.debouncer = Debouncer(debounce_interval=debounce_interval)
         self.file_watcher = FileWatcher(self.debouncer, config_dir)

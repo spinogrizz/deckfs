@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 
 from src.core.button import Button
+from src.utils.config import reset_config
 
 
 class TestButton(unittest.TestCase):
@@ -16,6 +17,8 @@ class TestButton(unittest.TestCase):
     def setUp(self):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
+        # Reset global config for clean test state
+        reset_config()
         self.button = Button(self.temp_dir, lambda: None)
         
     def tearDown(self):

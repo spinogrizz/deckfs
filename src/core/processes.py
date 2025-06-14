@@ -8,7 +8,7 @@ import signal
 from typing import Dict, Optional, List
 from collections import defaultdict
 
-from ..utils.config import SUPPORTED_SCRIPTS
+from ..utils.config import SUPPORTED_SCRIPTS, get_config
 from ..utils.file_utils import find_file
 from ..utils import logger
 
@@ -33,9 +33,6 @@ class ProcessManager:
         # Background monitoring
         self.monitor_thread: Optional[threading.Thread] = None
         self.monitoring = False
-        
-        # Find config directory from working_dir (go up one level from button directory)
-        self.config_dir = os.path.dirname(working_dir)
         
     def start_script(self, script_name: str, sync: bool = False) -> bool:
         """Start script with specified execution mode.
@@ -167,52 +164,6 @@ class ProcessManager:
         """
         return find_file(self.working_dir, script_name, list(SUPPORTED_SCRIPTS.keys()))
         
-    def _load_env_vars(self) -> Dict[str, str]:
-        """Load environment variables from env.local file.
-        
-        Returns:
-            Dict[str, str]: Environment variables as key-value pairs
-        """
-        env_vars = {}
-        env_file_path = os.path.join(self.config_dir, "env.local")
-        
-        if not os.path.exists(env_file_path):
-            return env_vars
-            
-        try:
-            with open(env_file_path, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
-                    
-                    # Skip empty lines and comments
-                    if not line or line.startswith('#'):
-                        continue
-                        
-                    # Parse KEY=VALUE pairs
-                    if '=' in line:
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        
-                        # Skip if key is empty
-                        if not key:
-                            logger.debug(f"Invalid line in env.local:{line_num}: {line}")
-                            continue
-                        
-                        # Remove quotes if present
-                        if value.startswith('"') and value.endswith('"'):
-                            value = value[1:-1]
-                        elif value.startswith("'") and value.endswith("'"):
-                            value = value[1:-1]
-                            
-                        env_vars[key] = value
-                    else:
-                        logger.debug(f"Invalid line in env.local:{line_num}: {line}")
-                        
-        except Exception as e:
-            logger.error(f"Error reading env.local file: {e}")
-            
-        return env_vars
         
     def _execute_script(self, cmd: List[str], script_path: str, script_name: str, sync: bool) -> bool:
         """Execute script with specified execution mode.
@@ -227,7 +178,10 @@ class ProcessManager:
             bool: True if script started/completed successfully
         """
         env = os.environ.copy()
-        env.update(self._load_env_vars())
+        config = get_config()
+        if config is not None:
+            env_vars = config.load_env_vars()
+            env.update(env_vars)
         
         if sync:
             # Synchronous execution with 30-second timeout

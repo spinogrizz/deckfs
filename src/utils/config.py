@@ -120,4 +120,93 @@ class ConfigManager:
                 debouncer.debounce_interval = new_interval
             except Exception as e:
                 logger.error(f"Error applying debounce interval: {e}")
+    
+    def load_env_vars(self) -> Dict[str, str]:
+        """Load environment variables from env.local file.
+        
+        Returns:
+            Dict[str, str]: Environment variables as key-value pairs
+        """
+        env_vars = {}
+        env_file_path = os.path.join(self.config_dir, "env.local")
+        
+        if not os.path.exists(env_file_path):
+            return env_vars
+            
+        try:
+            with open(env_file_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    
+                    # Skip empty lines and comments
+                    if not line or line.startswith('#'):
+                        continue
+                        
+                    # Parse KEY=VALUE pairs
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # Skip if key is empty
+                        if not key:
+                            logger.debug(f"Invalid line in env.local:{line_num}: {line}")
+                            continue
+                        
+                        # Remove quotes if present
+                        if value.startswith('"') and value.endswith('"'):
+                            value = value[1:-1]
+                        elif value.startswith("'") and value.endswith("'"):
+                            value = value[1:-1]
+                            
+                        env_vars[key] = value
+                    else:
+                        logger.debug(f"Invalid line in env.local:{line_num}: {line}")
+                        
+        except Exception as e:
+            logger.error(f"Error reading env.local file: {e}")
+            
+        return env_vars
+
+
+# Global ConfigManager instance - module-level singleton
+_config: Optional[ConfigManager] = None
+_config_dir: Optional[str] = None
+
+
+def get_config(config_dir: str = None) -> ConfigManager:
+    """Get global config instance, creating it if necessary.
+    
+    Args:
+        config_dir: Configuration directory path. If None, uses default CONFIG_DIR.
+                   Only used when creating the instance for the first time.
+    
+    Returns:
+        ConfigManager: Global ConfigManager instance
+    """
+    global _config, _config_dir
+    
+    # If config doesn't exist yet, create it
+    if _config is None:
+        if config_dir is None:
+            config_dir = CONFIG_DIR
+        _config_dir = config_dir
+        _config = ConfigManager(config_dir)
+    # If config exists but different config_dir requested, recreate
+    elif config_dir is not None and config_dir != _config_dir:
+        _config_dir = config_dir
+        _config = ConfigManager(config_dir)
+    
+    return _config
+
+
+def reset_config():
+    """Reset global config instance. Used for testing."""
+    global _config, _config_dir
+    _config = None
+    _config_dir = None
+
+
+# Alias for cleaner access
+config = get_config
         
