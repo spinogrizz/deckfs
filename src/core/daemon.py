@@ -1,5 +1,3 @@
-"""Main stream-deck-fs daemon class."""
-
 import time
 from .devices import StreamDeckManager
 from ..utils.config import CONFIG_DIR

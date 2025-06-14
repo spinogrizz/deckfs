@@ -1,5 +1,3 @@
-"""Main Stream Deck manager with new architecture."""
-
 import os
 import time
 import threading
@@ -12,7 +10,7 @@ from .files import FileWatcher
 from .button import Button
 from ..utils.config import ConfigManager
 from ..utils.file_utils import *
-from ..utils.image_utils import load_blank_image, load_error_image, prepare_image_for_deck
+from ..utils.image_utils import *
 from ..utils import logger
 
 

@@ -1,5 +1,3 @@
-"""Stream Deck button implementation."""
-
 import os
 import time
 import threading
@@ -46,14 +44,11 @@ class Button:
             bool: True if configuration loaded successfully
         """
         if not os.path.isdir(self.working_dir):
-            self.failed = True
-            self.request_redraw()
+            self.set_failed(True)
             return False
             
         # Clear any previous errors
-        if self.failed:
-            self.failed = False
-            self.request_redraw()
+        self.set_failed(False)
         
         # Update script is optional - not finding it is not an error
         self.process_manager.start_script_sync("update")
@@ -101,7 +96,10 @@ class Button:
         # Process manager will automatically monitor action completion
         self.process_manager.start_script_async("action")
         
-        
+    def set_failed(self, failed: bool):
+        self.failed = failed
+        self.request_redraw()   
+
     def _find_image_file(self) -> Optional[str]:
         """Internal method to locate image.* file for display on device."""
         return find_any_file(self.working_dir, "image")
@@ -139,28 +137,22 @@ class Button:
             bool: True if this file change was handled, False if ignored
         """
         if filename.startswith("image."):
-            # Image file changed - devices.py will handle updating display
             return True
+        
         elif filename.startswith("background."):
             logger.debug(f"Background script changed in {self.working_dir}")
             self.process_manager.stop_script("background")
             success = self.process_manager.start_script_async("background")
-            if success:
-                if self.failed:
-                    self.failed = False
-                    self.request_redraw()
-            else:
-                self.failed = True
-                self.request_redraw()
+            self.set_failed(not success)
             return True
+        
         elif filename.startswith("update."):
             logger.debug(f"Update script changed in {self.working_dir}")
-            # Update script is optional - not finding it is not an error
             self.process_manager.start_script_sync("update")
             return True
+        
         elif filename.startswith("action."):
             logger.debug(f"Action script changed in {self.working_dir}")
-            # Action scripts don't need restart - they run on button press
             return True
         
         return False
@@ -188,34 +180,28 @@ class Button:
             
             if len(self.background_crash_timestamps) > self.restart_limits:
                 logger.warn("Background script crashed too many times. Giving up.")
-                self.failed = True
-                self.request_redraw()
+                self.set_failed(True)
             else:
                 # Clear any previous error state immediately - we're going to try restart
-                if self.failed:
-                    self.failed = False
-                    self.request_redraw()
+                self.set_failed(False)
                     
                 # Wait a bit before restart to avoid rapid restart loops
                 def restart_after_delay():
                     success = self.process_manager.start_script_async("background")
                     if not success:
-                        # Failed to restart, show error
-                        self.failed = True
-                        self.request_redraw()
+                        self.set_failed(True)
                 
                 threading.Timer(2.0, restart_after_delay).start()
+
         elif script_name == "action":
             # Action script completed
             if exit_code != 0:
                 # Action failed, show error temporarily
-                self.failed = True
-                self.request_redraw()
+                self.set_failed(True)
                 
                 # Clear error after 2 seconds to restore normal display
                 def clear_action_error():
-                    self.failed = False
-                    self.request_redraw()
+                    self.set_failed(False)
                     
                 threading.Timer(2.0, clear_action_error).start()
         # Update scripts are handled synchronously, no callback needed
