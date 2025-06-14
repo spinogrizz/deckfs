@@ -1,5 +1,5 @@
 import time
-from .devices import StreamDeckManager
+from .coordinator import Coordinator
 from ..utils.config import CONFIG_DIR
 from ..utils import logger
 
@@ -23,8 +23,8 @@ class StreamDeckDaemon:
             
         logger.info("Starting stream-deck-fs daemon...")
         
-        # Initialize Stream Deck manager
-        self.manager = StreamDeckManager(self.config_dir)
+        # Initialize Stream Deck coordinator
+        self.manager = Coordinator(self.config_dir)
         self.manager.initialize()
         
         self.running = True

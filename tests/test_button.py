@@ -230,36 +230,33 @@ class TestButton(unittest.TestCase):
             handled = self.button.file_changed(invalid_file)
             self.assertFalse(handled)  # Should not handle these files
     
-    def test_get_image_bytes_error_state(self):
-        """Test get_image_bytes when button has error."""
+    def test_get_image_error_state(self):
+        """Test get_image when button has error."""
         self.button.failed = True
         
-        # Mock deck object
-        mock_deck = unittest.mock.Mock()
-        
-        result = self.button.get_image_bytes(mock_deck)
+        result = self.button.get_image()
         self.assertIsNone(result)
     
-    def test_get_image_bytes_no_image(self):
-        """Test get_image_bytes when no image file exists."""
-        mock_deck = unittest.mock.Mock()
-        
+    def test_get_image_no_image(self):
+        """Test get_image when no image file exists."""
         with patch.object(self.button, '_find_image_file', return_value=None):
-            result = self.button.get_image_bytes(mock_deck)
+            result = self.button.get_image()
             
         self.assertIsNone(result)
     
-    def test_get_image_bytes_success(self):
-        """Test successful get_image_bytes."""
-        mock_deck = unittest.mock.Mock()
-        mock_image_bytes = b"fake_image_data"
+    def test_get_image_success(self):
+        """Test successful get_image."""
+        from PIL import Image
+        mock_image = unittest.mock.Mock(spec=Image.Image)
         
         with patch.object(self.button, '_find_image_file', return_value="/path/to/image.png"), \
-             patch('src.core.button.load_and_prepare_image', return_value=mock_image_bytes):
+             patch('os.path.realpath', return_value="/path/to/image.png"), \
+             patch('os.path.exists', return_value=True), \
+             patch('PIL.Image.open', return_value=mock_image):
             
-            result = self.button.get_image_bytes(mock_deck)
+            result = self.button.get_image()
             
-        self.assertEqual(result, mock_image_bytes)
+        self.assertEqual(result, mock_image)
         self.assertFalse(self.button.failed)
             
     def test_reload_button(self):

@@ -2,9 +2,9 @@ import os
 import time
 import threading
 from typing import Optional
+from PIL import Image
 from .processes import ProcessManager
 from ..utils.file_utils import find_any_file
-from ..utils.image_utils import load_and_prepare_image
 from ..utils import logger
 
 
@@ -38,7 +38,7 @@ class Button:
         self.running = False
         
     def load_config(self) -> bool:
-        """Called by StreamDeckManager after button creation to run update script.
+        """Called by Coordinator after button creation to run update script.
         
         Returns:
             bool: True if configuration loaded successfully
@@ -91,7 +91,7 @@ class Button:
         self.process_manager.cleanup()
         
     def handle_press(self):
-        """Called by StreamDeckManager when physical button is pressed to execute action script."""
+        """Called by Coordinator when physical button is pressed to execute action script."""
         # Action script is optional - not finding it is not an error
         # Process manager will automatically monitor action completion
         self.process_manager.start_script_async("action")
@@ -104,14 +104,11 @@ class Button:
         """Internal method to locate image.* file for display on device."""
         return find_any_file(self.working_dir, "image")
     
-    def get_image_bytes(self, deck) -> Optional[bytes]:
-        """Get prepared image bytes for this button or None if error/no image.
+    def get_image(self) -> Optional[Image.Image]:
+        """Get PIL Image for this button or None if error/no image.
         
-        Args:
-            deck: Stream Deck device instance for image preparation
-            
         Returns:
-            Optional[bytes]: Prepared image bytes or None if error
+            Optional[Image.Image]: PIL Image or None if error/no image
         """
         if self.failed:
             return None
@@ -121,12 +118,21 @@ class Button:
             return None
             
         try:
-            return load_and_prepare_image(deck, image_path)
-        except Exception:
+            # Resolve symlinks for dynamic image switching
+            resolved_path = os.path.realpath(image_path)
+            if not os.path.exists(resolved_path):
+                logger.error(f"Image symlink target not found: {resolved_path}")
+                return None
+                
+            image = Image.open(resolved_path)
+            logger.debug(f"Image loaded: {resolved_path}")
+            return image
+        except Exception as e:
+            logger.error(f"Error loading image {image_path}: {e}")
             return None
     
     def file_changed(self, filename: str) -> bool:
-        """Called by devices.py when any file in button directory changes.
+        """Called by coordinator when any file in button directory changes.
         
         Button decides what to do based on the filename.
         

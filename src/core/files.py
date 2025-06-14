@@ -9,7 +9,7 @@ from ..utils import logger
 
 
 class FileWatcher(FileSystemEventHandler):
-    """Watches config directory for changes and emits debounced events to StreamDeckManager.
+    """Watches config directory for changes and emits debounced events to Coordinator.
     
     Uses watchdog to monitor button directories, scripts, images, and config files.
     """

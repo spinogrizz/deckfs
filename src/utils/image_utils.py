@@ -71,31 +71,3 @@ def prepare_image_for_deck(deck, image: Image.Image) -> Optional[bytes]:
         return None
 
 
-def load_and_prepare_image(deck, image_path: str) -> Optional[bytes]:
-    """Load image from file and prepare for Stream Deck device.
-    
-    Args:
-        deck: Stream Deck device instance
-        image_path: Path to image file
-        
-    Returns:
-        Optional[bytes]: Image data ready for device or None if failed
-    """
-    try:
-        if not os.path.exists(image_path):
-            logger.error(f"Image file not found: {image_path}")
-            return None
-            
-        # Resolve symlinks for dynamic image switching
-        resolved_path = os.path.realpath(image_path)
-        if not os.path.exists(resolved_path):
-            logger.error(f"Image symlink target not found: {resolved_path}")
-            return None
-            
-        image = Image.open(resolved_path)
-        logger.debug(f"Image loaded: {resolved_path}")
-        return prepare_image_for_deck(deck, image)
-        
-    except Exception as e:
-        logger.error(f"Error loading image {image_path}: {e}")
-        return None
