@@ -1,4 +1,4 @@
-"""stream-deck-fs - control Stream Deck through filesystem."""
+"""deckfs - control Stream Deck through filesystem."""
 
 __version__ = "0.1.0"
 __author__ = "Denis Gryzlov"

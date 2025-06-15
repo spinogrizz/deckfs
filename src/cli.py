@@ -1,4 +1,4 @@
-"""Command line interface for stream-deck-fs service management."""
+"""Command line interface for deckfs service management."""
 
 import argparse
 import sys
@@ -19,14 +19,14 @@ from .utils.config import CONFIG_DIR
 def _check_service_prerequisites(service_manager: 'ServiceManager') -> bool:
     """Check if service can be started/restarted - common validation logic."""
     if not service_manager.is_service_installed():
-        print("Service is not installed. Run 'stream-deck-fs setup' first.")
+        print("Service is not installed. Run 'deckfs setup' first.")
         return False
     
     # Only check if config directory exists - daemon handles missing files with auto-reload
     config_path = Path(CONFIG_DIR)
     if not config_path.exists():
         print("🔧 Configuration directory not found.")
-        print("📋 Please run 'stream-deck-fs setup' to configure the service first.")
+        print("📋 Please run 'deckfs setup' to configure the service first.")
         return False
     
     return True
@@ -36,7 +36,7 @@ class ServiceManager:
     """Manages systemd service operations."""
     
     def __init__(self):
-        self.service_name = "stream-deck-fs"
+        self.service_name = "deckfs"
     
     def _run_systemctl(self, command: str) -> bool:
         """Run systemctl command.
@@ -170,7 +170,7 @@ def create_config_structure():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="stream-deck-fs - manage Stream Deck service"
+        description="deckfs - manage Stream Deck service"
     )
     
     # Service management commands
@@ -206,7 +206,7 @@ def main():
     )
     
     # Uninstall command
-    uninstall_parser = subparsers.add_parser('uninstall', help='Uninstall stream-deck-fs service and configuration')
+    uninstall_parser = subparsers.add_parser('uninstall', help='Uninstall deckfs service and configuration')
     uninstall_parser.add_argument(
         "--config-dir", 
         default=None,
@@ -218,7 +218,7 @@ def main():
     
     # Global options
     try:
-        pkg_version = version("stream-deck-fs")
+        pkg_version = version("deckfs")
     except Exception:
         # Fallback if package not installed or metadata unavailable
         pkg_version = "development"
@@ -226,7 +226,7 @@ def main():
     parser.add_argument(
         "-v", "--version", 
         action="version",
-        version=f"stream-deck-fs {pkg_version}"
+        version=f"deckfs {pkg_version}"
     )
     
     args = parser.parse_args()
@@ -241,7 +241,7 @@ def main():
             try:
                 if run_setup(config_dir):
                     print("\nSetup completed successfully!")
-                    print("Use 'stream-deck-fs start' to start the service")
+                    print("Use 'deckfs start' to start the service")
                 else:
                     print("\nSetup was not completed.")
                     sys.exit(1)
@@ -260,7 +260,7 @@ def main():
         config_dir = args.config_dir or CONFIG_DIR
         if run_setup(config_dir):
             print("\nSetup completed successfully!")
-            print("Use 'stream-deck-fs start' to start the service")
+            print("Use 'deckfs start' to start the service")
         else:
             print("\nSetup was not completed.")
             sys.exit(1)
@@ -276,7 +276,7 @@ def main():
         print("\nBasic structure created. Now you can:")
         print("1. Place images in folders (e.g.: ~/.local/streamdeck/01/image.png)")
         print("2. Create action scripts (e.g.: ~/.local/streamdeck/01/action.sh)")
-        print("3. Start service: stream-deck-fs start")
+        print("3. Start service: deckfs start")
     
     elif args.command == 'start':
         if not _check_service_prerequisites(service_manager):

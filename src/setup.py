@@ -1,4 +1,4 @@
-"""Interactive setup utility for stream-deck-fs daemon."""
+"""Interactive setup utility for deckfs daemon."""
 
 import os
 import sys
@@ -137,14 +137,14 @@ class SetupManager:
     
     def __init__(self, config_dir: str = CONFIG_DIR):
         self.config_dir = Path(config_dir)
-        self.service_name = "stream-deck-fs"
+        self.service_name = "deckfs"
         # List pattern allows adding more service managers later (OpenRC, SysV, etc.)
         self._service_installers = [
             SystemdUserServiceInstaller(self.service_name, sys.executable)
         ]
         
     def run_interactive_setup(self) -> bool:
-        print("🎉 Welcome to stream-deck-fs initial setup!")
+        print("🎉 Welcome to deckfs initial setup!")
         
         try:
             # Check if configuration directory exists
@@ -159,13 +159,13 @@ class SetupManager:
             self._setup_button_folders()
             
             # Ask about service installation
-            if self._ask_yes_no("Would you like to install stream-deck-fs as a system service? (recommended)"):
+            if self._ask_yes_no("Would you like to install deckfs as a system service? (recommended)"):
                 if not self._install_service():
                     print_error("Service installation failed.")
                     print("You can try running the daemon manually or check the logs.")
                 else:
                     print_success("Service installed successfully!")
-                    print("Use 'stream-deck-fs start' to start the service")
+                    print("Use 'deckfs start' to start the service")
             
             print(f"\n🎉 Setup complete! Configuration directory: {self.config_dir}")
             print(f"You can now configure your buttons by editing files in {self.config_dir}.")
@@ -256,7 +256,7 @@ class SetupManager:
             # Create env.local
             env_path = self.config_dir / "env.local"
             if not env_path.exists():
-                env_content = """# Environment variables for stream-deck-fs scripts"""
+                env_content = """# Environment variables for deckfs scripts"""
                 env_path.write_text(env_content)
                 print_success("Created env.local")
             
@@ -289,8 +289,8 @@ class SetupManager:
         # Strategy 3: Search common locations
         search_paths = [
             Path.cwd() / "config.yaml.example",  # Current working directory
-            Path.home() / ".local" / "share" / "stream-deck-fs" / "config.yaml.example",  # User data dir
-            Path("/usr/share/stream-deck-fs/config.yaml.example"),  # System data dir
+            Path.home() / ".local" / "share" / "deckfs" / "config.yaml.example",  # User data dir
+            Path("/usr/share/deckfs/config.yaml.example"),  # System data dir
         ]
         
         for path in search_paths:

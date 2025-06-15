@@ -1,6 +1,6 @@
-# stream-deck-fs
+# deckfs
 
-[![Tests](https://github.com/spinogrizz/stream-deck-fs/workflows/Tests/badge.svg)](https://github.com/spinogrizz/stream-deck-fs/actions)
+[![Tests](https://github.com/spinogrizz/deckfs/workflows/Tests/badge.svg)](https://github.com/spinogrizz/deckfs/actions)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -8,7 +8,7 @@ A Linux daemon for controlling Stream Deck devices without GUI through filesyste
 
 ## Overview
 
-stream-deck-fs provides a simple, filesystem-based interface for configuring and controlling Elgato Stream Deck devices on Linux. Instead of requiring a GUI application, it monitors a directory structure where each numbered folder corresponds to a Stream Deck button.
+deckfs provides a simple, filesystem-based interface for configuring and controlling Elgato Stream Deck devices on Linux. Instead of requiring a GUI application, it monitors a directory structure where each numbered folder corresponds to a Stream Deck button.
 
 ## Features
 
@@ -21,15 +21,23 @@ stream-deck-fs provides a simple, filesystem-based interface for configuring and
 
 ## Installation
 
+### From PyPI (when available)
 ```bash
-pip install stream-deck-fs
+pip install deckfs
+```
+
+### From source
+```bash
+git clone https://github.com/spinogrizz/deckfs.git
+cd deckfs
+pip install .
 ```
 
 ## Quick Start
 
 1. Initialize configuration structure:
 ```bash
-stream-deck-fs --init
+deckfs setup
 ```
 
 2. Add images and scripts to button folders:
@@ -46,25 +54,11 @@ echo 'print("Button 2 pressed!")' > ~/.local/streamdeck/02/action.py
 
 3. Start the daemon:
 ```bash
-stream-deck-fs
+deckfs start
 ```
 
 ## Development
 
-### Running tests
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests
-make test
-
-# Run tests with coverage
-make test-coverage
-
-# Run specific test file
-make test-single FILE=test_debouncer.py
-```
 
 ## Configuration Structure
 
@@ -104,17 +98,26 @@ make test-single FILE=test_debouncer.py
 ## CLI Usage
 
 ```bash
-# Start daemon (default config: ~/.local/streamdeck)
-stream-deck-fs
+# Initialize configuration structure
+deckfs setup
+
+# Start daemon in foreground
+deckfs start
+
+# Start daemon in background
+deckfs start --daemon
+
+# Stop running daemon
+deckfs stop
+
+# Check daemon status
+deckfs status
 
 # Use custom config directory
-stream-deck-fs --config-dir /path/to/config
-
-# Initialize basic folder structure
-stream-deck-fs --init
+deckfs start --config-dir /path/to/config
 
 # Show version
-stream-deck-fs --version
+deckfs --version
 ```
 
 ## Requirements
@@ -211,5 +214,5 @@ MIT License - see LICENSE file for details.
 
 ## Support
 
-- Report issues: https://github.com/spinogrizz/stream-deck-fs/issues
-- Source code: https://github.com/spinogrizz/stream-deck-fs
+- Report issues: https://github.com/spinogrizz/deckfs/issues
+- Source code: https://github.com/spinogrizz/deckfs

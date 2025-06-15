@@ -1,4 +1,4 @@
-"""Daemon runner for stream-deck-fs service."""
+"""Daemon runner for deckfs service."""
 
 import sys
 import argparse
@@ -10,7 +10,7 @@ from .utils.config import CONFIG_DIR
 def main():
     """Main entry point for daemon runner."""
     parser = argparse.ArgumentParser(
-        description="stream-deck-fs daemon runner"
+        description="deckfs daemon runner"
     )
     
     parser.add_argument(

@@ -1,1 +1,1 @@
-"""Test package for stream-deck-fs."""
+"""Test package for deckfs."""

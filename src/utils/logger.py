@@ -1,5 +1,5 @@
 """
-Logging utility for stream-deck-fs daemon.
+Logging utility for deckfs daemon.
 
 - DEBUG: Only shown when DEBUG=1 environment variable is set
 - INFO, WARN: General information

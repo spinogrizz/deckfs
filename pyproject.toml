@@ -3,19 +3,18 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "stream-deck-fs"
+name = "deckfs"
 version = "0.1.0"
 authors = [
     {name = "Denis Gryzlov", email = "gryzlov@gmail.com"},
 ]
 description = "Linux daemon for Stream Deck control without GUI through filesystem"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
 requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -43,12 +42,14 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/spinogrizz/stream-deck-fs"
-"Bug Reports" = "https://github.com/spinogrizz/stream-deck-fs/issues"
-"Source" = "https://github.com/spinogrizz/stream-deck-fs"
+Homepage = "https://github.com/spinogrizz/deckfs"
+"Bug Reports" = "https://github.com/spinogrizz/deckfs/issues"
+"Source" = "https://github.com/spinogrizz/deckfs"
+Repository = "https://github.com/spinogrizz/deckfs"
+Documentation = "https://github.com/spinogrizz/deckfs#readme"
 
 [project.scripts]
-stream-deck-fs = "src.cli:main"
+deckfs = "src.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

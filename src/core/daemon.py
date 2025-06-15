@@ -23,9 +23,9 @@ class StreamDeckDaemon:
             return
         
         # Set recognizable process title
-        setproctitle.setproctitle("stream-deck-fs-daemon")
+        setproctitle.setproctitle("deckfs-daemon")
             
-        logger.info("Starting stream-deck-fs daemon...")
+        logger.info("Starting deckfs daemon...")
         
         # Initialize Stream Deck coordinator
         self.manager = Coordinator(self.config_dir)

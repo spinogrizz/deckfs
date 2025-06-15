@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Simple test runner script for stream-deck-fs
+# Simple test runner script for deckfs
 
-echo "=== Stream Deck FS Test Runner ==="
+echo "=== DeckFS Test Runner ==="
 echo
 
 # Check if pytest is installed
