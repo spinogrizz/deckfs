@@ -4,9 +4,32 @@ import argparse
 import sys
 import os
 import subprocess
+from pathlib import Path
+try:
+    from importlib.metadata import version
+except ImportError:
+    # Python < 3.8 fallback
+    from importlib_metadata import version
+
 from .utils import logger
-from .utils.setup import run_setup, needs_setup
+from .setup import run_setup, run_uninstall, needs_setup
 from .utils.config import CONFIG_DIR
+
+
+def _check_service_prerequisites(service_manager: 'ServiceManager') -> bool:
+    """Check if service can be started/restarted - common validation logic."""
+    if not service_manager.is_service_installed():
+        print("Service is not installed. Run 'stream-deck-fs setup' first.")
+        return False
+    
+    # Only check if config directory exists - daemon handles missing files with auto-reload
+    config_path = Path(CONFIG_DIR)
+    if not config_path.exists():
+        print("🔧 Configuration directory not found.")
+        print("📋 Please run 'stream-deck-fs setup' to configure the service first.")
+        return False
+    
+    return True
 
 
 class ServiceManager:
@@ -182,25 +205,39 @@ def main():
         help="Path to configuration directory (default: ~/.local/streamdeck)"
     )
     
+    # Uninstall command
+    uninstall_parser = subparsers.add_parser('uninstall', help='Uninstall stream-deck-fs service and configuration')
+    uninstall_parser.add_argument(
+        "--config-dir", 
+        default=None,
+        help="Path to configuration directory (default: ~/.local/streamdeck)"
+    )
+    
     # Init command (legacy)
     subparsers.add_parser('init', help='Create basic configuration structure (legacy)')
     
     # Global options
+    try:
+        pkg_version = version("stream-deck-fs")
+    except Exception:
+        # Fallback if package not installed or metadata unavailable
+        pkg_version = "development"
+    
     parser.add_argument(
-        "--version", 
+        "-v", "--version", 
         action="version",
-        version="stream-deck-fs 0.1.0"
+        version=f"stream-deck-fs {pkg_version}"
     )
     
     args = parser.parse_args()
     
-    # If no command specified, show help or run setup if needed
+    # If no command specified, show help or run setup if this is first time
     if not args.command:
         config_dir = CONFIG_DIR
-        if needs_setup(config_dir):
-            print("It looks like this is your first time running stream-deck-fs!")
-            print("Let's set up the configuration...\n")
-            
+        config_path = Path(config_dir)
+        
+        # Only auto-run setup if config directory doesn't exist at all (true first time)
+        if not config_path.exists():            
             try:
                 if run_setup(config_dir):
                     print("\nSetup completed successfully!")
@@ -212,6 +249,7 @@ def main():
                 print("\nSetup interrupted.")
                 sys.exit(1)
         else:
+            # Config directory exists - show help instead of running setup again
             parser.print_help()
         return
     
@@ -227,6 +265,12 @@ def main():
             print("\nSetup was not completed.")
             sys.exit(1)
     
+    elif args.command == 'uninstall':
+        config_dir = args.config_dir or CONFIG_DIR
+        if not run_uninstall(config_dir):
+            print("\nUninstall was not completed.")
+            sys.exit(1)
+    
     elif args.command == 'init':
         create_config_structure()
         print("\nBasic structure created. Now you can:")
@@ -235,52 +279,36 @@ def main():
         print("3. Start service: stream-deck-fs start")
     
     elif args.command == 'start':
-        if not service_manager.is_service_installed():
-            print("Service is not installed. Run 'stream-deck-fs setup' first.")
+        if not _check_service_prerequisites(service_manager):
             sys.exit(1)
-        
-        # Check if configuration exists before starting
-        if needs_setup(CONFIG_DIR):
-            print("🔧 Configuration not found or incomplete.")
-            print("📋 Please run 'stream-deck-fs setup' to configure the service first.")
-            sys.exit(1)
-            
-        if not service_manager.start():
-            sys.exit(1)
+        success = service_manager.start()
     
     elif args.command == 'stop':
-        if not service_manager.stop():
-            sys.exit(1)
+        success = service_manager.stop()
     
     elif args.command == 'restart':
-        if not service_manager.is_service_installed():
-            print("Service is not installed. Run 'stream-deck-fs setup' first.")
+        if not _check_service_prerequisites(service_manager):
             sys.exit(1)
-            
-        # Check if configuration exists before restarting
-        if needs_setup(CONFIG_DIR):
-            print("🔧 Configuration not found or incomplete.")
-            print("📋 Please run 'stream-deck-fs setup' to configure the service first.")
-            sys.exit(1)
-            
-        if not service_manager.restart():
-            sys.exit(1)
+        success = service_manager.restart()
     
     elif args.command == 'reload':
-        if not service_manager.reload():
-            sys.exit(1)
+        success = service_manager.reload()
     
     elif args.command == 'status':
-        if not service_manager.status():
-            sys.exit(1)
+        success = service_manager.status()
     
     elif args.command == 'enable':
-        if not service_manager.enable():
-            sys.exit(1)
+        success = service_manager.enable()
     
     elif args.command == 'disable':
-        if not service_manager.disable():
-            sys.exit(1)
+        success = service_manager.disable()
+    
+    else:
+        success = True
+    
+    # Exit with error code if any service operation failed
+    if 'success' in locals() and not success:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import time
+import setproctitle
 from .coordinator import Coordinator
 from ..utils.config import CONFIG_DIR
 from ..utils import logger
@@ -20,6 +21,9 @@ class StreamDeckDaemon:
     def start(self):
         if self.running:
             return
+        
+        # Set recognizable process title
+        setproctitle.setproctitle("stream-deck-fs-daemon")
             
         logger.info("Starting stream-deck-fs daemon...")
         
