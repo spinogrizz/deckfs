@@ -1,5 +1,4 @@
 # Configuration file for stream-deck-fs
-# Copy this file to ~/.local/streamdeck/config.yaml and modify as needed
 
 # Stream Deck display brightness (0-100)
 # Default: 50
