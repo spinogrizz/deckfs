@@ -49,9 +49,14 @@ The project uses GitHub Actions to automatically build and publish releases when
 1. **Configure trusted publishing on PyPI**:
    - Go to your PyPI project settings
    - Add GitHub as a trusted publisher
-   - Set repository: `spinogrizz/deckfs` 
+   - Set repository: `spinogrizz/deckfs` (or your actual repository path)
    - Set workflow filename: `release.yml`
-   - Set environment: leave blank (not using environments)
+   - Set environment name: `release` (must match workflow environment)
+   
+2. **Create GitHub Environment**:
+   - Go to repository Settings → Environments
+   - Create new environment named `release`
+   - Optionally add protection rules (reviewers, branch restrictions)
 
 ### Alternative: Using API Tokens
 
