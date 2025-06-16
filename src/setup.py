@@ -278,9 +278,15 @@ class SetupManager:
             pass
         
         # Strategy 2: Look relative to this file (development/source directory)
-        # This assumes we're in src/utils/setup.py and config.yaml.example is in project root
+        # First check if config.yaml.example is in the same directory as this file
         current_file = Path(__file__).resolve()
-        project_root = current_file.parent.parent.parent
+        example_config = current_file.parent / "config.yaml.example"
+        
+        if example_config.exists():
+            return example_config
+        
+        # Fallback: Look in project root (for development mode)
+        project_root = current_file.parent.parent
         example_config = project_root / "config.yaml.example"
         
         if example_config.exists():
