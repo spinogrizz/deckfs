@@ -64,6 +64,27 @@ class ProcessManager:
     def start_script_sync(self, script_name: str) -> bool:
         """Start script synchronously and wait for completion."""
         return self.start_script(script_name, sync=True)
+        
+    def start_script_sync_with_output(self, script_name: str) -> tuple[bool, bytes]:
+        """Start script synchronously and return success status and stdout output.
+        
+        Args:
+            script_name: Name of the script to start
+            
+        Returns:
+            tuple[bool, bytes]: (success, stdout_bytes) - success status and raw stdout data
+        """
+        script_path = self._find_script_file(script_name)
+        if not script_path:
+            return False, b""
+            
+        ext = script_path.split('.')[-1]
+        cmd = SUPPORTED_SCRIPTS.get(ext)
+        if not cmd:
+            logger.error(f"Unsupported script extension: {ext}")
+            return False, b""
+            
+        return self._execute_script_with_output(cmd, script_path, script_name)
             
     def stop_script(self, script_name: str):
         """Stop script and all child processes.
@@ -223,6 +244,47 @@ class ProcessManager:
             except Exception as e:
                 logger.error(f"Error starting {script_name} script: {e}")
                 return False
+                
+    def _execute_script_with_output(self, cmd: List[str], script_path: str, script_name: str) -> tuple[bool, bytes]:
+        """Execute script synchronously and return success status and stdout bytes.
+        
+        Args:
+            cmd: Command list to execute
+            script_path: Path to script file
+            script_name: Name of script for logging
+            
+        Returns:
+            tuple[bool, bytes]: (success, stdout_bytes) - success status and raw stdout data
+        """
+        env = os.environ.copy()
+        config = get_config()
+        if config is not None:
+            env_vars = config.load_env_vars()
+            env.update(env_vars)
+        
+        try:
+            result = subprocess.run(
+                cmd + [script_path],
+                cwd=self.working_dir,
+                capture_output=True,
+                timeout=30,
+                env=env
+            )
+            
+            success = result.returncode == 0
+            stdout_bytes = result.stdout if isinstance(result.stdout, bytes) else result.stdout.encode('utf-8')
+            
+            logger.debug(f"Completed {script_name} script with exit code {result.returncode}, output: {len(stdout_bytes)} bytes")
+            
+            if not success and result.stderr:
+                stderr_text = result.stderr.decode('utf-8', errors='replace') if isinstance(result.stderr, bytes) else result.stderr
+                logger.error(f"{script_name} script error: {stderr_text}")
+            
+            return success, stdout_bytes
+            
+        except Exception as e:
+            logger.error(f"Error executing {script_name} script: {e}")
+            return False, b""
             
     def _monitor_all_processes(self):
         """Monitor all running processes and notify about completions.
