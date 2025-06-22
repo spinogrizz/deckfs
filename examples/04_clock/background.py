@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 
-# Update scripts that redraw the clock image every minute
+# Background script that triggers clock updates every minute
 
 import time
-from update import draw_clock
+import os
 
 def main():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    draw_script = os.path.join(script_dir, "draw.py")
+    
     while True:
-        draw_clock()
         time.sleep(60)
+        
+        # Touch the draw script to trigger a file change event
+        # This will cause the daemon to detect the change and redraw the button
+        os.utime(draw_script, None)
 
 if __name__ == "__main__":
     main()
