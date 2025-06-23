@@ -62,18 +62,32 @@ def generate_load_image():
     
     return image
 
+def send_image(image):
+    """Send image using magic delimiters protocol."""
+    # Save image to bytes buffer
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
+    image_bytes = buffer.getvalue()
+    
+    # Send with magic delimiters
+    sys.stdout.buffer.write(b"DECKFS_IMG_START\n")
+    sys.stdout.buffer.write(f"{len(image_bytes)}\n".encode())
+    sys.stdout.buffer.write(image_bytes)
+    sys.stdout.buffer.write(b"DECKFS_IMG_END\n")
+    sys.stdout.buffer.flush()
+
 def main():
-    """Generate load average image and output to stdout as PNG."""
+    """Generate load average images continuously every 10 seconds."""
     try:
-        image = generate_load_image()
+        import time
         
-        # Save image to bytes buffer
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        
-        # Output binary data to stdout
-        sys.stdout.buffer.write(buffer.getvalue())
-        
+        while True:
+            image = generate_load_image()
+            send_image(image)
+            
+            # Wait 10 seconds before next update
+            time.sleep(10)
+            
     except Exception as e:
         # Log error to stderr and exit with error code
         print(f"Error generating load average image: {e}", file=sys.stderr)

@@ -85,6 +85,28 @@ class ProcessManager:
             return False, b""
             
         return self._execute_script_with_output(cmd, script_path, script_name)
+        
+    def start_script_continuous(self, script_name: str, on_image_received=None) -> bool:
+        """Start script in continuous mode and monitor stdout for images.
+        
+        Args:
+            script_name: Name of the script to start
+            on_image_received: Callback called when image is received (called with image_bytes)
+            
+        Returns:
+            bool: True if script started successfully
+        """
+        script_path = self._find_script_file(script_name)
+        if not script_path:
+            return False
+            
+        ext = script_path.split('.')[-1]
+        cmd = SUPPORTED_SCRIPTS.get(ext)
+        if not cmd:
+            logger.error(f"Unsupported script extension: {ext}")
+            return False
+            
+        return self._execute_script_continuous(cmd, script_path, script_name, on_image_received)
             
     def stop_script(self, script_name: str):
         """Stop script and all child processes.
@@ -285,6 +307,99 @@ class ProcessManager:
         except Exception as e:
             logger.error(f"Error executing {script_name} script: {e}")
             return False, b""
+            
+    def _execute_script_continuous(self, cmd: List[str], script_path: str, script_name: str, on_image_received) -> bool:
+        """Execute script in continuous mode and monitor stdout for images.
+        
+        Args:
+            cmd: Command list to execute
+            script_path: Path to script file
+            script_name: Name of script for tracking
+            on_image_received: Callback for received images
+            
+        Returns:
+            bool: True if script started successfully
+        """
+        # Stop any existing script first
+        self.stop_script(script_name)
+        
+        env = os.environ.copy()
+        config = get_config()
+        if config is not None:
+            env_vars = config.load_env_vars()
+            env.update(env_vars)
+        
+        try:
+            process = subprocess.Popen(
+                cmd + [script_path], 
+                cwd=self.working_dir, 
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,  # Binary mode for image data
+                preexec_fn=os.setsid  # Create new session for child isolation
+            )
+            
+            with self.lock:
+                self.processes[script_name] = process
+                
+            # Start stream parser thread
+            parser_thread = threading.Thread(
+                target=self._parse_continuous_output,
+                args=(process, script_name, on_image_received),
+                daemon=True,
+                name=f"StreamParser-{script_name}"
+            )
+            parser_thread.start()
+                
+            logger.debug(f"Started continuous {script_name} script (PID: {process.pid})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error starting continuous {script_name} script: {e}")
+            return False
+            
+    def _parse_continuous_output(self, process, script_name: str, on_image_received):
+        """Parse stdout from continuous script looking for image data with magic delimiters."""
+        try:
+            while process.poll() is None:
+                # Read line by line looking for start marker
+                line = process.stdout.readline()
+                if not line:
+                    break
+                    
+                line = line.strip()
+                if line == b"DECKFS_IMG_START":
+                    # Read image size
+                    size_line = process.stdout.readline().strip()
+                    try:
+                        image_size = int(size_line)
+                    except ValueError:
+                        logger.error(f"Invalid image size in {script_name}: {size_line}")
+                        continue
+                    
+                    # Read exact number of bytes for image data
+                    image_data = process.stdout.read(image_size)
+                    if len(image_data) != image_size:
+                        logger.error(f"Incomplete image data in {script_name}: got {len(image_data)}, expected {image_size}")
+                        continue
+                    
+                    # Read end marker
+                    end_line = process.stdout.readline().strip()
+                    if end_line != b"DECKFS_IMG_END":
+                        logger.error(f"Missing end marker in {script_name}: {end_line}")
+                        continue
+                    
+                    # Successfully parsed image, notify callback
+                    if on_image_received:
+                        on_image_received(image_data)
+                        
+                    logger.debug(f"Received image from {script_name}: {len(image_data)} bytes")
+                    
+        except Exception as e:
+            logger.error(f"Error parsing continuous output from {script_name}: {e}")
+        finally:
+            logger.debug(f"Stream parser for {script_name} stopped")
             
     def _monitor_all_processes(self):
         """Monitor all running processes and notify about completions.

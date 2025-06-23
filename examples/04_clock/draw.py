@@ -2,6 +2,7 @@
 
 import sys
 import io
+import time
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
@@ -36,18 +37,32 @@ def generate_clock_image():
     
     return image
 
+def send_image(image):
+    """Send image using magic delimiters protocol."""
+    # Save image to bytes buffer
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
+    image_bytes = buffer.getvalue()
+    
+    # Send with magic delimiters
+    sys.stdout.buffer.write(b"DECKFS_IMG_START\n")
+    sys.stdout.buffer.write(f"{len(image_bytes)}\n".encode())
+    sys.stdout.buffer.write(image_bytes)
+    sys.stdout.buffer.write(b"DECKFS_IMG_END\n")
+    sys.stdout.buffer.flush()
+
 def main():
-    """Generate clock image and output to stdout as PNG."""
+    """Generate clock images continuously every minute."""
     try:
-        image = generate_clock_image()
-        
-        # Save image to bytes buffer
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        
-        # Output binary data to stdout
-        sys.stdout.buffer.write(buffer.getvalue())
-        
+        while True:
+            image = generate_clock_image()
+            send_image(image)
+            
+            # Wait until next minute boundary
+            now = datetime.now()
+            seconds_to_wait = 60 - now.second
+            time.sleep(seconds_to_wait)
+            
     except Exception as e:
         # Log error to stderr and exit with error code
         print(f"Error generating clock image: {e}", file=sys.stderr)
