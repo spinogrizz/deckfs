@@ -148,28 +148,34 @@ class Coordinator:
             return
             
         button = self.buttons[button_id]
-        
+
+        # Explicit error state -> error image
+        if button.failed:
+            self._show_error_image(button_id)
+            return
+
         # Get PIL Image from button
         image = button.get_image()
-        
-        if image:
-            # Normal image - prepare and display it
-            try:
-                image_bytes = prepare_image_for_deck(self.hardware.deck, image)
-                if image_bytes:
-                    key_index = button_id - 1  # Convert to 0-based index
-                    self.hardware.set_key_image(key_index, image_bytes)
-                    logger.debug(f"Button {button_id:02d}: Normal image displayed")
-                else:
-                    logger.error(f"Button {button_id:02d}: Failed to prepare image")
-                    button.failed = True
-                    self._show_error_image(button_id)
-            except Exception as e:
-                logger.error(f"Button {button_id:02d}: Error setting image on device: {e}")
+
+        if image is None:
+            # No image file at all -> placeholder/blank button, keep it cleared
+            self.clear_buttons(button_id)
+            return
+
+        # Normal image - prepare and display it
+        try:
+            image_bytes = prepare_image_for_deck(self.hardware.deck, image)
+            if image_bytes:
+                key_index = button_id - 1  # Convert to 0-based index
+                self.hardware.set_key_image(key_index, image_bytes)
+                logger.debug(f"Button {button_id:02d}: Normal image displayed")
+            else:
+                logger.error(f"Button {button_id:02d}: Failed to prepare image")
                 button.failed = True
                 self._show_error_image(button_id)
-        else:
-            # Button has error or no image - show error image
+        except Exception as e:
+            logger.error(f"Button {button_id:02d}: Error setting image on device: {e}")
+            button.failed = True
             self._show_error_image(button_id)
         
     

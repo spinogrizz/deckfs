@@ -1,6 +1,6 @@
 """deckfs - control Stream Deck through filesystem."""
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 __author__ = "Denis Gryzlov"
 __email__ = "gryzlov@gmail.com"
 __description__ = "Linux daemon for Stream Deck control without GUI through filesystem"

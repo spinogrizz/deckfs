@@ -37,6 +37,13 @@ class DeviceHardwareManager:
         self.device_monitor_thread = None
         self.device_monitor_lock = threading.Lock()
         self.device_monitor_event = threading.Event()
+
+        # Serializes set_key_image across all caller threads (debouncer timers,
+        # device-connect handler, key callbacks). The streamdeck SDK locks
+        # individual HID writes, but a single set_key_image is split into many
+        # packets; without this outer lock those packets can interleave between
+        # buttons and cause visible "spill-over" artifacts.
+        self.write_lock = threading.Lock()
         
         # USB monitoring
         self.udev_monitor = None
@@ -99,18 +106,19 @@ class DeviceHardwareManager:
     
     def set_key_image(self, key_index: int, image_bytes: bytes):
         """Set image on specific key.
-        
+
         Args:
             key_index: Key index (0-based)
             image_bytes: Image data in device-native format
         """
         if not self.is_connected():
             return
-            
-        try:
-            self.deck.set_key_image(key_index, image_bytes)
-        except Exception as e:
-            logger.error(f"Error setting key {key_index} image: {e}")
+
+        with self.write_lock:
+            try:
+                self.deck.set_key_image(key_index, image_bytes)
+            except Exception as e:
+                logger.error(f"Error setting key {key_index} image: {e}")
     
     def apply_settings(self, brightness: int):
         """Apply device settings.

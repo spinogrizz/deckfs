@@ -22,9 +22,10 @@ def load_blank_image() -> Optional[Image.Image]:
     """
     if ImageCache._blank_image is None:
         try:
-            # Navigate up from src/utils/image_utils.py to find project root
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            blank_path = os.path.join(project_root, 'resources', 'blank.png')
+            # resources/ now ships inside the package (src/resources/) so it
+            # works both from a checkout and from a pip install.
+            pkg_root = os.path.dirname(os.path.dirname(__file__))
+            blank_path = os.path.join(pkg_root, 'resources', 'blank.png')
             ImageCache._blank_image = Image.open(blank_path)
             logger.debug(f"Blank image loaded: {blank_path}")
         except Exception as e:
@@ -41,9 +42,8 @@ def load_error_image() -> Optional[Image.Image]:
     """
     if ImageCache._error_image is None:
         try:
-            # Navigate up from src/utils/image_utils.py to find project root
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            error_path = os.path.join(project_root, 'resources', 'error.png')
+            pkg_root = os.path.dirname(os.path.dirname(__file__))
+            error_path = os.path.join(pkg_root, 'resources', 'error.png')
             ImageCache._error_image = Image.open(error_path)
             logger.debug(f"Error image loaded: {error_path}")
         except Exception as e:
