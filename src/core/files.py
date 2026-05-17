@@ -4,6 +4,7 @@ import os
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from ..utils.config import SUPPORTED_IMAGE_FORMATS, SUPPORTED_SCRIPTS
 from ..utils.debouncer import Debouncer
 from ..utils import logger
 
@@ -24,7 +25,17 @@ class FileWatcher(FileSystemEventHandler):
         self.debouncer = debouncer
         self.config_dir = config_dir
         self.observer: Observer = None
-        self.file_types = ["image", "background", "update", "action"]
+        # Per file_type, the set of allowed extensions (no leading dot).
+        # Anything outside this whitelist (e.g. image.png.tmp, image.tmp.png)
+        # is ignored so half-written atomic-save tmp files don't trigger redraws.
+        script_exts = set(SUPPORTED_SCRIPTS.keys())
+        image_exts = {ext.lstrip('.') for ext in SUPPORTED_IMAGE_FORMATS}
+        self.file_type_extensions = {
+            "image": image_exts,
+            "background": script_exts,
+            "update": script_exts,
+            "action": script_exts,
+        }
         self.config_file = os.path.join(config_dir, "config.yaml")
         
     def start_watching(self):
@@ -178,11 +189,16 @@ class FileWatcher(FileSystemEventHandler):
             if not (len(button_dir) >= 2 and button_dir[:2].isdigit()):
                 return None
                 
-            # Create debounce key based on button and file type
-            for file_type in self.file_types:
-                if filename.startswith(f"{file_type}."):
-                    return f"{button_dir}:{file_type}"
-                    
+            # Match exact "<file_type>.<ext>" where ext is whitelisted.
+            # Using startswith() would falsely match e.g. "image.png.tmp" or
+            # "image.tmp.png", which atomic-save patterns produce.
+            name, _, ext = filename.rpartition('.')
+            if not name or not ext:
+                return None
+            allowed = self.file_type_extensions.get(name)
+            if allowed and ext in allowed:
+                return f"{button_dir}:{name}"
+
             return None
             
         except Exception as e:

@@ -124,7 +124,11 @@ class Button:
                 logger.error(f"Image symlink target not found: {resolved_path}")
                 return None
                 
-            image = Image.open(resolved_path)
+            # Force eager read of pixel data so a subsequent atomic replace
+            # of the file on disk cannot corrupt the in-flight render.
+            with Image.open(resolved_path) as img:
+                img.load()
+                image = img.copy()
             logger.debug(f"Image loaded: {resolved_path}")
             return image
         except Exception as e:
